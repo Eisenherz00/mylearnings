@@ -1,0 +1,41 @@
+# ── Data files ──────────────────────────────────────────────────────────────
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.ods
+*.parquet
+*.feather
+*.arrow
+*.db
+*.sqlite
+*.sqlite3
+*.h5
+*.hdf5
+*.json
+*.jsonl
+*.xml
+
+# ── macOS system files ───────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ─────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── Jupyter checkpoints ──────────────────────────────────────────────────────
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
