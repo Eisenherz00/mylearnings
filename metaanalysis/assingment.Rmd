@@ -1,6 +1,6 @@
 ---
-title: "Homework: Combinability Analysis"
-author: "Manfeng Li"
+title: "Assignment: Meta Analysis"
+author: ""
 date: "`r Sys.Date()`"
 output:
   pdf_document:
@@ -20,15 +20,13 @@ knitr::opts_chunk$set(
 )
 ```
 
----
-
 # Dataset and Risk Factor
 
 ## Dataset: `dat.normand1999` -- Stroke Rehabilitation Meta-Analysis
 
-The **Normand (1999)** dataset contains aggregate (study-level) data from
-**9 randomised controlled trials** comparing *specialised stroke-unit care*
-(**treatment = `exp`**) against *conventional hospital care* (**control = `ctrl`**).
+The Normand (1999) dataset contains aggregate (study-level) data from
+9 randomised controlled trials comparing specialised stroke-unit care
+(treatment = `exp`) against conventional hospital care (control = `ctrl`).
 
 | Column | Meaning |
 |---|---|
@@ -43,30 +41,23 @@ The **Normand (1999)** dataset contains aggregate (study-level) data from
 
 ## Chosen Risk Factor
 
-We focus on the **mean functional score** (`m1i` for `exp`, `m2i` for `ctrl`).  
+We focus on the mean functional score (`m1i` for `exp`, `m2i` for `ctrl`).  
 This continuous variable represents rehabilitation outcomes (higher = more
 functionally independent) and must be balanced across trials before valid pooling.
-
----
 
 # Packages and Setup
 
 ```{r packages}
 library(SuppDists)
-library(kSamples)   # Anderson-Darling k-sample test (ad.test)
+library(kSamples)
 library(tidyverse)
 ```
-
----
 
 # Load and Prepare the Data
 
 ```{r load-data}
-# -- Load raw wide-format dataset ------------------------------------------
-# Assumes the CSV is in the metadat_datasets_csv subfolder
 normand <- read.csv("metadat_datasets_csv/dat.normand1999.csv", stringsAsFactors = FALSE)
 
-# -- Reshape to long format (one row per arm per study) --------------------
 exp_arm  <- normand[, c("study", "source", "n1i", "m1i", "sd1i")]
 ctrl_arm <- normand[, c("study", "source", "n2i", "m2i", "sd2i")]
 
@@ -81,22 +72,12 @@ col_long  <- col_long[order(col_long$study, col_long$gr), ]
 rownames(col_long) <- NULL
 ```
 
----
-
 # Explode Summary Data to Pseudo-IPD
 
-Following the class methodology, we **expand** each study arm from its summary
+We expand each study arm from its summary
 statistics (`score ± sd`, `pts` patients) into a pseudo-IPD vector via:
 
 $$ \tilde{x}_{ij} \sim \mathcal{N}(\mu_i,\, \sigma_i), \quad j = 1, \ldots, n_i $$
-
-This replicates the R lecture code:
-
-```r
-da <- as.data.frame(lapply(ro, function(x) rep(x, A1$pts)))
-da$score <- rnorm(length(da$score), da$score, da$sd)
-```
-
 ```{r explode}
 set.seed(123)
 
@@ -104,32 +85,21 @@ set.seed(123)
 da <- as.data.frame(lapply(col_long, function(x) rep(x, col_long$pts)))
 da$score <- rnorm(nrow(da), mean = da$score, sd = da$sd)
 
-da$study <- as.character(da$study)   # keep study as character like in lecture
+da$study <- as.character(da$study)   # keep study as character
 cat(sprintf("Pseudo-IPD dimensions: %d rows  (%d ctrl, %d exp)\n",
             nrow(da),
             sum(da$gr == "ctrl"),
             sum(da$gr == "exp")))
 ```
 
----
-
 # `balance` Function (Leave-One-Out)
 
-This is the **core algorithm** from the lecture, unchanged except for the
-variable name `score` replacing `pdiab` / `pmale`.
-
 ```{r balance-function}
-# -- balance() : Leave-One-Out AD Test -------------------------------------
-# data     : long-format pseudo-IPD data frame
-# variable : name of the continuous risk-factor column
-# group    : name of the treatment-group column ("gr")
-# digits   : rounding to avoid ties
 balance <- function(data, variable, group, digits) {
   require(kSamples)
   num <- length(unique(data$study))
   bl1 <- matrix(0, num, 3)
 
-  # Split by group
   sa1 <- filter(data, !!sym(group) ==
                   as.character(levels(as.factor(data[, group])))[1])
   sa2 <- filter(data, !!sym(group) ==
@@ -138,8 +108,8 @@ balance <- function(data, variable, group, digits) {
   k <- 0
   for (i in unique(data$study)) {
     k <- k + 1
-    a1 <- round(sa1[(sa1$study != i), (colnames(sa1) %in%  variable)], digits = digits)
-    a2 <- round(sa2[(sa2$study != i), (colnames(sa2) == variable)],    digits = digits)
+    a1 <- round(sa1[(sa1$study != i), (colnames(sa1) == variable)], digits = digits)
+    a2 <- round(sa2[(sa2$study != i), (colnames(sa2) == variable)], digits = digits)
     b  <- try(ad.test(a1, a2), silent = TRUE)
     bl1[k, ] <- c(b$ad[2, 1], b$ad[2, 3], b$sig)
   }
@@ -150,12 +120,10 @@ balance <- function(data, variable, group, digits) {
 }
 ```
 
----
-
 # Step 1 -- Original ECDF Plot (All Studies)
 
 ```{r original-ecdf}
-# -- Full-sample AD test ----------------------------------------------------
+# Full-sample AD test
 sa_ctrl <- subset(da, gr == "ctrl")
 sa_exp  <- subset(da, gr == "exp")
 
@@ -163,14 +131,13 @@ a1_all <- round(sa_ctrl$score, digits = 8)
 a2_all <- round(sa_exp$score,  digits = 8)
 
 b_all  <- ad.test(a1_all, a2_all)
-cat("=== Original Data: Anderson-Darling k-sample Test ===\n")
 print(b_all$ad)
 
-# -- ECDF objects -----------------------------------------------------------
+# ECDF objects
 F1 <- ecdf(a1_all)
 F2 <- ecdf(a2_all)
 
-# -- Plot -------------------------------------------------------------------
+# Plot
 plot(
   sort(a1_all), F1(sort(a1_all)),
   type = "s", col = 2, lwd = 1.5,
@@ -187,20 +154,13 @@ legend("topleft",
        bty    = "n")
 ```
 
----
-
 # Step 2 -- Leave-One-Out Balance Algorithm
 
 ```{r loo-algorithm, fig.keep='all'}
-# -- Initialisation ---------------------------------------------------------
+# Initialisation
 nstud  <- length(unique(da$study))   # max studies to consider removing
 result <- list()
 dat    <- da
-
-cat("=======================================================\n")
-cat("  Leave-One-Out Combinability Algorithm\n")
-cat("  Dataset: dat.normand1999  |  Risk: Functional Score\n")
-cat("=======================================================\n\n")
 
 for (j in 1:nstud) {
 
@@ -210,18 +170,18 @@ for (j in 1:nstud) {
     break
   }
 
-  # -- Balance table ------------------------------------------------------
+  # Balance table
   ba <- balance(data = dat, variable = "score", group = "gr", digits = 8)
 
-  # -- Identify study to remove -------------------------------------------
+  # Identify study to remove
   minimum  <- rownames(ba)[which.min(ba[, 1])]
   min_pval <- ba[rownames(ba) == minimum, 2]
   min_ad   <- ba[rownames(ba) == minimum, 1]
 
-  # -- Store result BEFORE removal ----------------------------------------
+  # Store result before removal
   result[[j]] <- list("study_deleted" = minimum, "summary" = ba)
 
-  cat(sprintf("------- Iteration %d -------\n", j))
+  cat(sprintf("Iteration %d \n", j))
   cat(sprintf("Study removed : %s\n", minimum))
   cat(sprintf("AD Stat       : %.4f\n", min_ad))
   cat(sprintf("p-value       : %.6f\n", min_pval))
@@ -229,14 +189,14 @@ for (j in 1:nstud) {
   print(ba)
   cat("\n")
 
-  # -- Remove study -------------------------------------------------------
+  # Remove study
   dat <- subset(dat, study != minimum)
 
-  # -- Update ECDF vectors ------------------------------------------------
+  # Update ECDF vectors
   a1_curr <- dat$score[dat$gr == "ctrl"]
   a2_curr <- dat$score[dat$gr == "exp"]
 
-  # -- Plot ECDFs ---------------------------------------------------------
+  # Plot ECDFs
   F1c <- ecdf(a1_curr)
   F2c <- ecdf(a2_curr)
 
@@ -259,10 +219,10 @@ for (j in 1:nstud) {
          lwd    = c(1.5, 1.5),
          bty    = "n")
 
-  # -- Stop criterion -----------------------------------------------------
+  # Stop criterion
   if (min_pval > 0.06) {
     cat(sprintf(
-      "✓  p = %.4f > 0.06 -> BALANCE REACHED at iteration %d.\n",
+      "p = %.4f > 0.06 -> BALANCE REACHED at iteration %d.\n",
       min_pval, j
     ))
     deleted <- sapply(result, `[[`, "study_deleted")
@@ -272,14 +232,9 @@ for (j in 1:nstud) {
 }
 ```
 
----
-
 # Step 3 -- Full Iteration Summary
 
 ```{r full-summary}
-cat("=======================================================\n")
-cat("  COMPLETE ITERATION SUMMARY\n")
-cat("=======================================================\n\n")
 
 for (idx in seq_along(result)) {
   cat(sprintf("[Iteration %d]  Study deleted: %s\n", idx, result[[idx]]$study_deleted))
@@ -294,21 +249,19 @@ cat(sprintf("Studies removed  : %s\n", paste(deleted_studies,  collapse = ", "))
 cat(sprintf("Studies retained : %s\n", paste(retained_studies, collapse = ", ")))
 ```
 
----
-
 # Step 4 -- Comments and Interpretation
 
 ## Dataset recap
 
-We used the **Normand (1999)** stroke-rehabilitation meta-analysis
-(`dat.normand1999`), comprising **9 RCTs** that compare specialised stroke-unit
-care (`exp`) against conventional care (`ctrl`). The selected **risk factor** is
-the **mean functional score** -- a continuous measure of patient independence
+We used the Normand (1999) stroke-rehabilitation meta-analysis
+(`dat.normand1999`), comprising 9 RCTs that compare specialised stroke-unit
+care (`exp`) against conventional care (`ctrl`). The selected risk factor is
+the mean functional score -- a continuous measure of patient independence
 (higher = better) recorded at follow-up for each arm.
 
 ## Method
 
-Following the class methodology (Monaco 2024):
+Following the methodology:
 
 - **Explosion to pseudo-IPD**: summary statistics (mean, SD, n) were expanded
   into patient-level pseudo-samples via `rnorm(n, mean, sd)`, replicating the
@@ -317,15 +270,15 @@ Following the class methodology (Monaco 2024):
   score distributions of `ctrl` and `exp` are statistically identical.
 - **Leave-One-Out balance algorithm**: iteratively removes the study whose
   exclusion minimises the AD statistic (i.e., most improves balance) until the
-  residual p-value exceeds **0.06**.
+  residual p-value exceeds 0.06.
 
 ## Results
 
-- **Before any removal**: the overall AD statistic is **8.92** with **p < 0.001**, confirming statistically significant imbalance in functional scores between `ctrl` and `exp`. The two ECDFs are visually separated, especially at the upper tail.
-- **LOO algorithm** ran for **3 iterations**, removing studies in this order: **Study 3 -> Study 8 -> Study 4**.
-- Balance was achieved at **Iteration 3** (Study 4 removed), where **p = 0.3839 > 0.06**. The ECDFs after removal show substantial overlap.
+- **Before any removal**: the overall AD statistic is 8.92 with p < 0.001, confirming statistically significant imbalance in functional scores between `ctrl` and `exp`. The two ECDFs are visually separated, especially at the upper tail.
+- **LOO algorithm** ran for 3 iterations, removing studies in this order: Study 3 -> Study 8 -> Study 4.
+- Balance was achieved at Iteration 3 (Study 4 removed), where p = 0.3839 > 0.06. The ECDFs after removal show substantial overlap.
 - Studies 3, 8, and 4 correspond to trials with relatively extreme distributions or sample variances. Removing them successfully mitigates the distributional deviance.
 
 ## Conclusion
 
-The retained study pool (Studies 1, 2, 5, 6, 7, and 9) satisfies the **basic combinability** criterion for the functional-score risk factor. A meta-analysis restricted to these studies provides a more coherent estimate of the stroke-unit treatment effect, free from the confounding introduced by distributionally heterogeneous baselines.
+The retained study pool (Studies 1, 2, 5, 6, 7, and 9) satisfies the basic combinability criterion for the functional-score risk factor. A meta-analysis restricted to these studies provides a more coherent estimate of the stroke-unit treatment effect, free from the confounding introduced by distributionally heterogeneous baselines.
