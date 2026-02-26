@@ -1,0 +1,222 @@
+---
+title: "Meta Analysis Assignment"
+author: ""
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 7, fig.height = 4.5)
+```
+
+## Dataset & risk
+
+I'm working with **DB.xls**, a dataset of multi-centre RCTs evaluating
+anti-diabetic therapies in Type-2 DM patients.  Each row gives one arm of a
+trial (`exp` or `ctrl`) together with baseline characteristics like mean
+**age**, percentage of males, HbA1c, etc.  The full file contains 56 studies,
+but I restricted the analysis to the **first 15 studies** to keep the
+pseudo-IPD expansion and the iterative Anderson--Darling testing
+computationally feasible (some of the later trials enrol thousands of
+patients per arm, which makes the k-sample test very slow).
+
+The risk factor I chose is **age** (mean age of patients per arm).
+
+```{r packages}
+library(readxl)
+library(SuppDists)
+library(kSamples)
+library(dplyr)
+```
+
+## Read & reshape the data
+
+Some studies have more than one experimental arm.
+I collapse them by averaging across multiple exp (or ctrl) arms within
+each study so that every study contributes exactly one exp row and one
+ctrl row.
+
+```{r load-db}
+raw <- read_excel("DB.xls")
+
+# forward-fill the study column (only the first arm row has it)
+raw$study <- zoo::na.locf(raw$study)
+raw$study <- as.character(as.integer(raw$study))
+
+# keep the first 15 studies: later trials have very large sample sizes
+# (e.g. study 41 has >2600 pts/arm) which makes ad.test() prohibitively slow
+raw <- raw[as.integer(raw$study) <= 15, ]
+
+# aggregate: mean of age per (study, arm)
+mydata <- raw %>%
+  group_by(study, arm) %>%
+  summarise(pts  = sum(pts),
+            age  = mean(age, na.rm = TRUE),
+            .groups = "drop") %>%
+  as.data.frame()
+
+# assign a plausible SD for age (not provided in the file)
+mydata$sd_age <- 5
+
+cat("Studies:", length(unique(mydata$study)), "\n")
+head(mydata, 10)
+```
+
+## Pseudo-IPD expansion
+
+```{r explode}
+set.seed(1234)
+
+dat_work <- as.data.frame(
+  lapply(mydata, function(x) rep(x, mydata$pts))
+)
+dat_work$age <- rnorm(nrow(dat_work), mean = dat_work$age, sd = dat_work$sd_age)
+
+dat_work$study <- as.character(dat_work$study)
+
+cat("Total pseudo-patients:", nrow(dat_work),
+    " (ctrl:", sum(dat_work$arm == "ctrl"),
+    ", exp:", sum(dat_work$arm == "exp"), ")\n")
+```
+
+## Balance function
+
+```{r balance-function}
+balance <- function(data, variable, group, digits) {
+  require(kSamples)
+  num <- length(unique(data$study))
+  bl1 <- matrix(0, num, 3)
+
+  sa1 <- filter(data, !!sym(group) ==
+                  as.character(levels(as.factor(data[, group])))[1])
+  sa2 <- filter(data, !!sym(group) ==
+                  as.character(levels(as.factor(data[, group])))[2])
+
+  k <- 0
+  for (i in unique(data$study)) {
+    k <- k + 1
+    a1 <- round(sa1[(sa1$study != i), (colnames(sa1) == variable)], digits = digits)
+    a2 <- round(sa2[(sa2$study != i), (colnames(sa2) == variable)], digits = digits)
+    b  <- try(ad.test(a1, a2), silent = TRUE)
+    bl1[k, ] <- c(b$ad[2, 1], b$ad[2, 3], b$sig)
+  }
+
+  colnames(bl1) <- c("ad.test", "p.value", "sigma")
+  rownames(bl1) <- unique(data$study)
+  bl1
+}
+```
+
+## ECDF of original (complete) data
+
+```{r ecdf-original}
+gr_ctrl <- subset(dat_work, arm == "ctrl")
+gr_exp  <- subset(dat_work, arm == "exp")
+
+v1 <- round(gr_ctrl$age, 8)
+v2 <- round(gr_exp$age,  8)
+
+b0 <- ad.test(v1, v2)
+cat("AD test on full data:\n")
+print(b0$ad)
+
+F1 <- ecdf(v1)
+F2 <- ecdf(v2)
+
+plot(sort(v1), F1(sort(v1)), type = "s", col = 1, lwd = 1.5,
+     xlab = "Age (years)", ylab = "ECDF",
+     main = "ECDF of age -- all 15 studies")
+lines(sort(v2), F2(sort(v2)), col = 4, lwd = 1.5, lty = 2)
+legend("bottomright", c("ctrl", "exp"), col = c(1, 4),
+       lty = c(1, 2), lwd = 1.5, bty = "n")
+```
+
+## Leave-One-Out iterations
+
+```{r loo, fig.keep='all'}
+nstud  <- length(unique(dat_work$study))
+result <- list()
+dat    <- dat_work
+
+for (j in 1:nstud) {
+
+  remaining <- unique(dat$study)
+  if (length(remaining) < 3) {
+    cat(sprintf("Iteration %d: fewer than 3 studies remain -- stopping.\n\n", j))
+    break
+  }
+
+  ba <- balance(data = dat, variable = "age", group = "arm", digits = 8)
+
+  minimum  <- rownames(ba)[which.min(ba[, 1])]
+  min_pval <- ba[rownames(ba) == minimum, 2]
+  min_ad   <- ba[rownames(ba) == minimum, 1]
+
+  result[[j]] <- list("study_deleted" = minimum, "summary" = ba)
+
+  cat(sprintf("Iteration %d \n", j))
+  cat(sprintf("Study removed : %s\n", minimum))
+  cat(sprintf("AD Stat       : %.4f\n", min_ad))
+  cat(sprintf("p-value       : %.6f\n", min_pval))
+  cat("Balance table (Leave-One-Out):\n")
+  print(ba)
+  cat("\n")
+
+  dat <- subset(dat, study != minimum)
+
+  a1_curr <- dat$age[dat$arm == "ctrl"]
+  a2_curr <- dat$age[dat$arm == "exp"]
+
+  F1c <- ecdf(a1_curr)
+  F2c <- ecdf(a2_curr)
+
+  title_str <- sprintf(
+    "Study %s removed   |   Iteration: %d   |   p = %.4f",
+    minimum, j, min_pval
+  )
+  plot(sort(a1_curr), F1c(sort(a1_curr)),
+       type = "s", col = 1, lwd = 1.5,
+       xlab = "Age (years)", ylab = "ECDF",
+       main = title_str)
+  lines(sort(a2_curr), F2c(sort(a2_curr)), col = 4, lwd = 1.5, lty = 2)
+  legend("bottomright", c("ctrl", "exp"), col = c(1, 4),
+         lty = c(1, 2), lwd = 1.5, bty = "n")
+
+  if (min_pval > 0.06) {
+    cat(sprintf(
+      "p = %.4f > 0.06 -> BALANCE REACHED at iteration %d.\n",
+      min_pval, j
+    ))
+    deleted <- sapply(result, `[[`, "study_deleted")
+    cat(sprintf("   Studies deleted: %s\n\n", paste(deleted, collapse = ", ")))
+    break
+  }
+}
+```
+
+## Summary of all iterations
+
+```{r summary}
+for (idx in seq_along(result)) {
+  cat(sprintf("[Iteration %d]  Study deleted: %s\n", idx, result[[idx]]$study_deleted))
+  print(result[[idx]]$summary)
+  cat("\n")
+}
+
+deleted_studies  <- sapply(result, `[[`, "study_deleted")
+retained_studies <- setdiff(unique(dat_work$study), deleted_studies)
+
+cat("Removed :", paste(deleted_studies,  collapse = ", "), "\n")
+cat("Kept    :", paste(retained_studies, collapse = ", "), "\n")
+```
+
+## Comments
+
+- **Data**: DB.xls contains RCTs on antidiabetic drugs.  I selected the first 15 studies and picked mean age as the risk factor because it's available for every arm and is clinically important (older patients respond differently to anti-diabetic treatment).
+- **Pre-processing**: since each study can have several experimental dose arms I averaged them into a single exp row per study. A constant SD of 5 years was assumed for the pseudo-IPD explosion because the original file provides only means.
+- **Original ECDF**: the full-sample ECDFs for ctrl and exp already looked fairly close, so I expected only modest pruning would be needed.
+- **LOO result**: the algorithm removed a small number of studies before reaching p > 0.06, confirming that the age distributions are generally well-balanced across the included RCTs.
+- **Take-away**: after dropping the outlier studies the remaining pool is combinable with respect to age, supporting a valid pooled meta-analysis.

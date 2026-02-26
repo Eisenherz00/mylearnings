@@ -39,3 +39,8 @@ env/
 # ── Jupyter checkpoints ──────────────────────────────────────────────────────
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
+
+.Rhistory
+.RData
+.Ruser
+.Rproj.user/
