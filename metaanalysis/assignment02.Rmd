@@ -1,0 +1,309 @@
+---
+title: "Meta Analysis Assignment"
+author: ''
+date: '`r Sys.Date()`'
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    theme: readable
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(
+  echo       = TRUE,
+  message    = FALSE,
+  warning    = FALSE,
+  fig.align  = "center",
+  fig.width  = 6.5,
+  fig.height = 4.5
+)
+```
+
+
+# 1. Introduction and Dataset Selection
+
+## 1.1 Data Source
+
+For this homework I selected the **Gibson et al. (2002)** meta-analysis
+(`dat.gibson2002.csv`), which pools data from randomised controlled trials
+evaluating the effect of **self-management education programmes** on health
+outcomes in adults with asthma.
+
+The dataset is available from the `metadat` R package.  It contains 15 trials,
+of which **13 report continuous outcome data** (mean and standard deviation of
+hospital admissions in the treatment and control arms).
+
+## 1.2 Chosen Risk Factor
+
+The continuous outcome I will analyse is the **mean number of hospital
+admissions** (`m1i` for the experimental group, `m2i` for the control group).
+Differences in hospitalisation rates across trials may reflect heterogeneity
+in patient severity and thus threaten the combinability of the pooled estimate.
+
+
+# 2. Required Packages
+
+```{r load-packages}
+library(SuppDists)
+library(kSamples)
+library(tidyverse)
+```
+
+
+# 3. Data Loading and Pre-processing
+
+```{r read-data}
+df_raw <- read.csv("metadat_datasets_csv/dat.gibson2002.csv",
+                   stringsAsFactors = FALSE)
+
+# Keep only trials that report means and standard deviations
+df_raw <- df_raw %>% filter(!is.na(m1i) & !is.na(sd1i) &
+                            !is.na(m2i) & !is.na(sd2i))
+
+cat(sprintf("Trials retained after filtering: %d\n", nrow(df_raw)))
+```
+
+```{r build-long}
+# Experimental arm
+df_exp <- df_raw %>%
+  transmute(study  = row_number(),
+            source = paste0(author, " (", year, ")"),
+            pts    = n1i,
+            hosp   = m1i,
+            sd     = sd1i,
+            gr     = "exp")
+
+# Control arm
+df_ctrl <- df_raw %>%
+  transmute(study  = row_number(),
+            source = paste0(author, " (", year, ")"),
+            pts    = n2i,
+            hosp   = m2i,
+            sd     = sd2i,
+            gr     = "ctrl")
+
+df_long <- bind_rows(df_exp, df_ctrl) %>%
+  arrange(study, gr) %>%
+  mutate(study = as.character(study))
+
+knitr::kable(df_long, digits = 2,
+             caption = "Study-arm level data (long format)")
+```
+
+
+# 4. Expansion to Pseudo-IPD
+
+Each arm is expanded from its summary statistics (mean ± SD, *n* patients)
+into a vector of pseudo-individual patient data via random normal sampling:
+
+$$\tilde{x}_{ij} = \mathcal{N}(\mu_i, \sigma_i), \quad j = 1, \dots, n_i$$
+
+```{r explode-ipd}
+set.seed(2024)
+
+df_ipd <- as.data.frame(
+  lapply(df_long, function(x) rep(x, df_long$pts))
+)
+
+df_ipd$hosp <- rnorm(nrow(df_ipd), mean = df_ipd$hosp, sd = df_ipd$sd)
+df_ipd$study <- as.character(df_ipd$study)
+
+cat(sprintf("Pseudo-IPD created: %d rows  (ctrl = %d, exp = %d)\n",
+            nrow(df_ipd),
+            sum(df_ipd$gr == "ctrl"),
+            sum(df_ipd$gr == "exp")))
+```
+
+
+# 5. Balance Function (Leave-One-Out)
+
+The `balance()` function below computes the Anderson–Darling *k*-sample
+statistic after removing one study at a time.  It returns the AD statistic,
+*p*-value, and significance code for each leave-one-out iteration.
+
+```{r balance-function}
+balance <- function(data, variable, group, digits) {
+  require(kSamples)
+  num <- length(unique(data$study))
+  bl1 <- matrix(0, num, 3)
+
+  sa1 <- filter(data, !!sym(group) ==
+                  as.character(levels(as.factor(data[, group])))[1])
+  sa2 <- filter(data, !!sym(group) ==
+                  as.character(levels(as.factor(data[, group])))[2])
+
+  k <- 0
+  for (i in unique(data$study)) {
+    k <- k + 1
+    a1 <- round(sa1[(sa1$study != i), (colnames(sa1) == variable)], digits = digits)
+    a2 <- round(sa2[(sa2$study != i), (colnames(sa2) == variable)], digits = digits)
+    b  <- try(ad.test(a1, a2), silent = TRUE)
+    bl1[k, ] <- c(b$ad[2, 1], b$ad[2, 3], b$sig)
+  }
+
+  colnames(bl1) <- c("ad.test", "p.value", "sigma")
+  rownames(bl1) <- unique(data$study)
+  bl1
+}
+```
+
+
+# 6. Step 1 — Original ECDF (All Trials)
+
+Before any study removal, we visualise the empirical cumulative distribution
+functions (ECDFs) of the pseudo-IPD for the two groups and conduct a global
+Anderson–Darling test.
+
+```{r original-ecdf, fig.cap="ECDF of hospital admissions — all 13 trials included."}
+ctrl_vec <- round(subset(df_ipd, gr == "ctrl")$hosp, digits = 8)
+exp_vec  <- round(subset(df_ipd, gr == "exp")$hosp,  digits = 8)
+
+ad_full <- ad.test(ctrl_vec, exp_vec)
+cat("Global Anderson-Darling test (all studies):\n")
+print(ad_full$ad)
+
+Fc <- ecdf(ctrl_vec)
+Fe <- ecdf(exp_vec)
+
+plot(sort(ctrl_vec), Fc(sort(ctrl_vec)),
+     type = "s", col = "forestgreen", lwd = 2,
+     xlab = "Hospital Admissions (pseudo-IPD)",
+     ylab = "Cumulative Probability",
+     main = "Original Data: ECDF — Control vs Experimental (All Trials)")
+lines(sort(exp_vec), Fe(sort(exp_vec)),
+      col = "darkorange", lwd = 2, lty = 2)
+legend("bottomright",
+       legend = c("Control", "Experimental"),
+       col    = c("forestgreen", "darkorange"),
+       lty    = c(1, 2), lwd = 2, bty = "n")
+```
+
+
+# 7. Step 2 — Leave-One-Out Balance Algorithm
+
+```{r loo-iterations, fig.keep='all'}
+nstud  <- length(unique(df_ipd$study))
+result <- list()
+dat    <- df_ipd
+
+for (j in 1:nstud) {
+
+  remaining <- unique(dat$study)
+  if (length(remaining) < 3) {
+    cat(sprintf("Iteration %d: fewer than 3 studies remain -- stopping.\n\n", j))
+    break
+  }
+
+  ba <- balance(data = dat, variable = "hosp", group = "gr", digits = 8)
+
+  minimum  <- rownames(ba)[which.min(ba[, 1])]
+  min_pval <- ba[rownames(ba) == minimum, 2]
+  min_ad   <- ba[rownames(ba) == minimum, 1]
+
+  result[[j]] <- list("study_deleted" = minimum, "summary" = ba)
+
+  cat(sprintf("Iteration %d \n", j))
+  cat(sprintf("Study removed : %s\n", minimum))
+  cat(sprintf("AD Stat       : %.4f\n", min_ad))
+  cat(sprintf("p-value       : %.6f\n", min_pval))
+  cat("Balance table (Leave-One-Out):\n")
+  print(ba)
+  cat("\n")
+
+  dat <- subset(dat, study != minimum)
+
+  a1_curr <- dat$hosp[dat$gr == "ctrl"]
+  a2_curr <- dat$hosp[dat$gr == "exp"]
+
+  F1c <- ecdf(a1_curr)
+  F2c <- ecdf(a2_curr)
+
+  title_str <- sprintf(
+    "Study %s removed   |   Iteration: %d   |   p = %.4f",
+    minimum, j, min_pval
+  )
+  plot(sort(a1_curr), F1c(sort(a1_curr)),
+       type = "s", col = "forestgreen", lwd = 2,
+       xlab = "Hospital Admissions (pseudo-IPD)",
+       ylab = "Cumulative Probability",
+       main = title_str)
+  lines(sort(a2_curr), F2c(sort(a2_curr)),
+        col = "darkorange", lwd = 2, lty = 2)
+  legend("bottomright",
+         legend = c("Control", "Experimental"),
+         col    = c("forestgreen", "darkorange"),
+         lty    = c(1, 2), lwd = 2, bty = "n")
+
+  if (min_pval > 0.06) {
+    cat(sprintf(
+      "p = %.4f > 0.06 -> BALANCE REACHED at iteration %d.\n",
+      min_pval, j
+    ))
+    deleted <- sapply(result, `[[`, "study_deleted")
+    cat(sprintf("   Studies deleted: %s\n\n", paste(deleted, collapse = ", ")))
+    break
+  }
+}
+```
+
+
+# 8. Step 3 — Full Iteration Summary
+
+```{r iteration-summary}
+for (idx in seq_along(result)) {
+  cat(sprintf("[Iteration %d]  Study deleted: %s\n",
+              idx, result[[idx]]$study_deleted))
+  print(result[[idx]]$summary)
+  cat("\n")
+}
+
+deleted_studies  <- sapply(result, `[[`, "study_deleted")
+retained_studies <- setdiff(unique(df_ipd$study), deleted_studies)
+
+# Map study numbers back to their citations
+study_names <- unique(df_long[, c("study", "source")])
+deleted_names  <- study_names$source[study_names$study %in% deleted_studies]
+retained_names <- study_names$source[study_names$study %in% retained_studies]
+
+cat(sprintf("Deleted  (%d): %s\n", length(deleted_names),
+            paste(deleted_names, collapse = "; ")))
+cat(sprintf("Retained (%d): %s\n", length(retained_names),
+            paste(retained_names, collapse = "; ")))
+```
+
+
+# 9. Comments and Interpretation
+
+1. **Dataset overview.**
+   The Gibson (2002) dataset summarises 13 RCTs (after removing two trials
+   with missing continuous-outcome data) that investigated whether structured
+   self-management education reduces hospitalisations in asthma patients.
+   The experimental arm received the educational intervention; the control arm
+   received usual care.
+
+2. **Original ECDF.**
+   The initial ECDF plot reveals a noticeable separation between the control
+   and experimental distributions, with the control group exhibiting
+   systematically higher pseudo-IPD values (i.e. more hospital admissions).
+   The Anderson–Darling test on the full sample confirms statistically
+   significant distributional imbalance.
+
+3. **LOO algorithm results.**
+   The iterative leave-one-out procedure identified a small subset of trials
+   whose removal substantially improved distributional balance.  At each
+   iteration the study whose exclusion yielded the lowest AD statistic was
+   dropped.  The algorithm terminated when the *p*-value exceeded the 0.06
+   threshold, indicating that the remaining studies share a sufficiently
+   homogeneous distributional profile.
+
+4. **Conclusion.**
+   After pruning the identified outlier trials, the retained study pool
+   satisfies the combinability assumption for the hospital-admissions risk
+   factor.  Pooled meta-analytic estimates computed on this reduced set can
+   be regarded as methodologically more defensible, since the remaining
+   trials exhibit compatible baseline hospitalisation distributions across
+   the experimental and control arms.
