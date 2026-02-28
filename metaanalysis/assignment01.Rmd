@@ -1,6 +1,9 @@
 ---
 title: "Meta Analysis Assignment"
-author: ""
+author: 
+  - "Yanle He"
+  - "Matrikelnummer: 12386629"
+  - "Major: Statistics and Data Science"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
   pdf_document:
@@ -12,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
                       fig.width = 7, fig.height = 4.5)
 ```
 
-## Dataset & risk
+## - Dataset & Risk Factor
 
 I'm working with **DB.xls**, a dataset of multi-centre RCTs evaluating
 anti-diabetic therapies in Type-2 DM patients.  Each row gives one arm of a
@@ -32,7 +35,7 @@ library(kSamples)
 library(dplyr)
 ```
 
-## Read & reshape the data
+## - Read & Reshape the Data
 
 Some studies have more than one experimental arm.
 I collapse them by averaging across multiple exp (or ctrl) arms within
@@ -65,7 +68,9 @@ cat("Studies:", length(unique(mydata$study)), "\n")
 head(mydata, 10)
 ```
 
-## Pseudo-IPD expansion
+## - Pseudo-IPD expansion
+
+Since the original dataset only provides aggregate means, I perform a pseudo-IPD expansion. By combining the known sample sizes with an assumed standard deviation, I simulate a patient-level distribution using a normal random generator $X \sim \mathcal{N}(\mu, \sigma^2)$ to enable more granular distribution testing.
 
 ```{r explode}
 set.seed(1234)
@@ -82,7 +87,9 @@ cat("Total pseudo-patients:", nrow(dat_work),
     ", exp:", sum(dat_work$arm == "exp"), ")\n")
 ```
 
-## Balance function
+## - Balance function
+
+This function evaluate the statistical similarity between the control and experimental groups. It utilizes the AD k-sample test to calculate the distance between distributions, returning the test statistic and p-value for each study iteration.
 
 ```{r balance-function}
 balance <- function(data, variable, group, digits) {
@@ -110,7 +117,9 @@ balance <- function(data, variable, group, digits) {
 }
 ```
 
-## ECDF of original (complete) data
+## - ECDF of original (complete) data
+
+This provides a baseline visual assessment of the distributional overlap before any pruning occurs.
 
 ```{r ecdf-original}
 gr_ctrl <- subset(dat_work, arm == "ctrl")
@@ -134,7 +143,9 @@ legend("bottomright", c("ctrl", "exp"), col = c(1, 4),
        lty = c(1, 2), lwd = 1.5, bty = "n")
 ```
 
-## Leave-One-Out iterations
+## - Leave-One-Out iterations
+
+The goal is to systematically identify and remove "outlier" studies that contribute most to the distributional imbalance, repeating the process until the overall p-value exceeds the balance threshold.
 
 ```{r loo, fig.keep='all'}
 nstud  <- length(unique(dat_work$study))
@@ -197,7 +208,7 @@ for (j in 1:nstud) {
 }
 ```
 
-## Summary of all iterations
+## - Summary of all iterations
 
 ```{r summary}
 for (idx in seq_along(result)) {
@@ -213,10 +224,10 @@ cat("Removed :", paste(deleted_studies,  collapse = ", "), "\n")
 cat("Kept    :", paste(retained_studies, collapse = ", "), "\n")
 ```
 
-## Comments
+## - Comments
 
 - **Data**: DB.xls contains RCTs on antidiabetic drugs.  I selected the first 15 studies and picked mean age as the risk factor because it's available for every arm and is clinically important (older patients respond differently to anti-diabetic treatment).
 - **Pre-processing**: since each study can have several experimental dose arms I averaged them into a single exp row per study. A constant SD of 5 years was assumed for the pseudo-IPD explosion because the original file provides only means.
 - **Original ECDF**: the full-sample ECDFs for ctrl and exp already looked fairly close, so I expected only modest pruning would be needed.
-- **LOO result**: the algorithm removed a small number of studies before reaching p > 0.06, confirming that the age distributions are generally well-balanced across the included RCTs.
+- **LOO result**: the algorithm removed a small number of studies before reaching p > 0.06, it only required a single iteration—removing just one minor outlier (Study 8)—to push the AD p-value up to 0.0795, successfully exceeding the 0.06 balance threshold, confirming that the age distributions are generally well-balanced across the included RCTs.
 - **Take-away**: after dropping the outlier studies the remaining pool is combinable with respect to age, supporting a valid pooled meta-analysis.
