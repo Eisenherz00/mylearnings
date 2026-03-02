@@ -1,0 +1,802 @@
+\documentclass[9pt, a4paper]{article}
+
+% --- 1. Core Packages ---
+\usepackage[UTF8]{ctex}
+\usepackage{geometry}
+\geometry{margin=1.5cm}
+\usepackage{enumitem}
+\usepackage{pifont}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\usepackage{listings}
+\usepackage{amsmath}
+\usepackage{parskip}
+
+% --- 2. Visual Definitions ---
+\definecolor{myblue}{RGB}{20, 80, 160}
+\definecolor{prosgreen}{RGB}{0, 150, 80}
+\definecolor{consred}{RGB}{200, 30, 30}
+
+\setlist[itemize]{nosep, topsep=2pt, leftmargin=1.2em}
+\setlist[enumerate]{nosep, topsep=2pt, leftmargin=1.2em}
+
+% Section: newpage before each
+\newcommand{\sectionbreak}{\clearpage}
+\titleformat{\section}
+  {\normalfont\large\bfseries\color{myblue}}
+  {\thesection}{0.8em}{}[{\titlerule[0.8pt]}]
+\titlespacing*{\section}{0pt}{0pt}{4pt}
+
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries\color{myblue!80}}
+  {\thesubsection}{0.6em}{}
+\titlespacing*{\subsection}{0pt}{4pt}{2pt}
+
+% tcolorbox compact
+\tcbset{
+    common/.style={
+        arc=2pt, boxrule=0.4pt,
+        top=3pt, bottom=3pt, left=6pt, right=6pt,
+        fonttitle=\bfseries\small
+    },
+    defbox/.style={common, colback=blue!3!white, colframe=myblue!70!black,
+        title={\small Concept \& Definition / 概念与定义}},
+    prosbox/.style={common, colback=green!4!white, colframe=prosgreen!80!black,
+        title={\small Pros / 优点}},
+    consbox/.style={common, colback=red!3!white, colframe=consred!80!black,
+        title={\small Cons / 缺点}},
+    summarybox/.style={common, colback=yellow!5!white, colframe=orange!80!black,
+        title={\small Critical Summary / 核心总结}}
+}
+
+% --- 3. Document Info ---
+\title{\textbf{Missing Data Analysis: Comprehensive Recap}}
+
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+\tableofcontents
+\newpage
+
+% ===================================================================
+%                        PART I
+% ===================================================================
+\begin{center}
+    \Large \textbf{Part I: Single Imputation \& Basics}
+\end{center}
+
+\section{Imputation Goals \& Misconceptions / 插补目标与误区}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    The true goal of imputation is to represent observed information in a way that allows \textbf{valid inferences} --- approximate unbiased estimates, valid confidence intervals, and valid hypothesis tests --- to be obtained from incomplete data using standard complete-data software. Imputation does \textbf{not} try to create information or recover the exact unobserved missing values.\\
+    \textit{插补的真正目标是以一种方式表示观测信息，使得可以使用标准的完整数据软件从不完整数据中获得有效的推断（近似无偏估计、有效的置信区间和有效的假设检验）。插补并不试图创造信息或恢复精确的未观测缺失值。}
+\end{tcolorbox}
+
+\subsection{Usage \& Examples / 使用场景与示例}
+Use whenever you need a \textbf{rectangular dataset} free of missing cells so the analyst can focus on standard analysis without worrying about missingness.\\
+\textit{当需要一个没有缺失单元格的完整矩形数据集，以便分析者专注于标准分析时使用。}
+\begin{itemize}
+    \item \textbf{Example}: A misguided measure is the ``hit rate'' --- the percentage of imputed values matching the true missing values. For unemployment rate estimation, always guessing ``employed'' may yield a high hit rate, but the resulting statistical inference (unemployment rate) is severely biased downward.\\
+    \textit{例子："命中率"——插补值与真实缺失值匹配的百分比——是一个错误的衡量标准。对于失业率估计，总是猜"就业"可能产生高命中率，但由此得出的统计推断会严重向下偏差。}
+    \item \textbf{Key Misconception}: Imputation is not about guessing individual values correctly; it is about preserving \textbf{distributional properties} of the data so that aggregate statistics remain valid.\\
+    \textit{关键误区：插补不是为了正确猜测单个值，而是为了保留数据的分布特性，使聚合统计量保持有效。}
+\end{itemize}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Retains all observed data and exploits incomplete cases (unlike listwise deletion).\\
+        \textit{保留所有观测数据并利用不完整案例（不像列表删除那样丢弃）。}
+        \item [\ding{51}] Ensures consistent, reproducible analyses across different users of the same dataset.\\
+        \textit{确保同一数据集的不同用户之间分析一致且可重复。}
+        \item [\ding{51}] Frees the analyst from the burden of handling missingness in every analysis.\\
+        \textit{将分析者从每次分析都要处理缺失的负担中解放出来。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Naïve methods (mean imputation, LOCF) can be worse than doing nothing.\\
+        \textit{原始方法（均值插补、LOCF）可能比不做任何处理更糟糕。}
+        \item [\ding{55}] Single imputation always underestimates uncertainty because it treats imputed values as if they were real.\\
+        \textit{单次插补总是低估不确定性，因为它将插补值视为真实值。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Complete Case Analysis (Listwise Deletion) / 全案例分析}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    Analyzing \textbf{only} the records that have complete data on all variables used in the analysis. Any row with at least one missing value is entirely discarded. This is the default behaviour in most statistical software (e.g., R's \texttt{lm()}, SPSS).\\
+    \textit{仅分析所有分析变量上都有完整数据的记录。任何有至少一个缺失值的行都被完全丢弃。这是大多数统计软件的默认行为。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+Often used as a \textbf{default} strategy. It is mostly valid only under \textbf{MCAR} (Missing Completely At Random), meaning the probability of being missing does not depend on any observed or unobserved data.\\
+\textit{常作为默认策略。通常仅在 MCAR（完全随机缺失）下有效，即缺失概率不依赖于任何观测或未观测数据。}
+\begin{itemize}
+    \item \textbf{Special Case}: For regression coefficients, CCA can still provide unbiased estimates under \textbf{MNAR} if: (a) missingness occurs only in the explanatory variables (not the outcome), and (b) all variables that explain the missingness mechanism are included in the model.\\
+    \textit{特殊情况：对于回归系数，如果缺失仅发生在解释变量中且所有解释缺失机制的变量都包含在模型中，CCA 在 MNAR 下仍可提供无偏估计。}
+\end{itemize}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Extremely simple — no modeling or assumptions about the imputation process required.\\
+        \textit{极其简单——不需要关于插补过程的建模或假设。}
+        \item [\ding{51}] Under MCAR, all estimates (means, variances, regression coefficients) are unbiased.\\
+        \textit{在 MCAR 下，所有估计（均值、方差、回归系数）都是无偏的。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Estimates of the mean are biased under MAR and MNAR.\\
+        \textit{均值估计在 MAR 和 MNAR 下有偏差。}
+        \item [\ding{55}] Loses statistical power by discarding partially observed records (sometimes >50\% of data).\\
+        \textit{丢弃部分观测记录导致统计检验力下降（有时超过50\%的数据被丢弃）。}
+        \item [\ding{55}] Different analyses on the same dataset may use different subsets of complete cases, leading to inconsistent results.\\
+        \textit{对同一数据集的不同分析可能使用不同的完整案例子集，导致结果不一致。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Unconditional Mean Imputation / 无条件均值插补}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    A \textbf{deterministic, univariate} method where every missing value in a variable is replaced by the arithmetic mean of the observed values for that variable. No conditioning on other variables is used. This is the simplest possible imputation.\\
+    \textit{一种确定性的单变量方法，变量中的每个缺失值都被该变量观测值的算术平均值替换。不使用其他变量进行条件化。这是最简单的插补方法。}
+\end{tcolorbox}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Simplest form of imputation; trivially easy to implement.\\
+        \textit{最简单的插补形式；实施起来非常容易。}
+        \item [\ding{51}] The sample mean itself remains unbiased (under MCAR).\\
+        \textit{样本均值本身保持无偏（在 MCAR 下）。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] The sample variance \textbf{systematically underestimates} the true variance because all imputed values sit at the center.\\
+        \textit{样本方差系统性地低估真实方差，因为所有插补值都位于中心位置。}
+        \item [\ding{55}] Distorts marginal distributions (creates a spike at the mean), measures of shape (skewness, kurtosis), and correlations with other variables.\\
+        \textit{扭曲边际分布（在均值处产生尖峰）、形状度量（偏度、峰度）以及与其他变量的相关性。}
+        \item [\ding{55}] Inferences based on mean imputation are often \textbf{worse} than those from complete case analysis.\\
+        \textit{基于均值插补的推断通常比全案例分析更差。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Last Observation Carried Forward (LOCF) / 最近观测值结转}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    A \textbf{deterministic} strategy for \textbf{longitudinal data} where the last observed value of a subject is filled in for all subsequent time points after they drop out. It is one of the most commonly used (and most criticized) methods in clinical trials.\\
+    \textit{一种用于纵向数据的确定性方法，当受试者退出后，用其最后一个观测值填充所有后续时间点。这是临床试验中最常用（也最受批评）的方法之一。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+Traditionally advocated in medical studies and clinical trials by regulatory agencies (e.g., FDA guidelines). Used when patients drop out before the end of a longitudinal study.\\
+\textit{传统上由监管机构（如 FDA 指南）在医学研究和临床试验中推荐使用。当患者在纵向研究结束前退出时使用。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Extremely simple to implement; no statistical model needed.\\
+        \textit{极易实施；不需要统计模型。}
+        \item [\ding{51}] Provides a ``conservative'' analysis in some specific trial designs (though this is debated).\\
+        \textit{在某些特定试验设计中提供"保守"分析（尽管这一点存在争议）。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Relies on the \textbf{extremely strong and unrealistic} assumption that the outcome remains completely unchanged after dropout. For a disease that progresses over time, this is plainly wrong.\\
+        \textit{依赖于一个极端且不现实的假设：退出后结果完全不变。对于随时间进展的疾病，这显然是错误的。}
+        \item [\ding{55}] Can induce \textbf{severe bias} in either direction depending on the trajectory of the outcome.\\
+        \textit{可以根据结果的轨迹在任一方向上引入严重偏差。}
+        \item [\ding{55}] Underestimates the true variability over time.\\
+        \textit{低估了随时间变化的真实变异性。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Conditional Mean / Regression Imputation / 条件均值（回归）插补}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    A \textbf{deterministic, multivariate} method. A regression model is fitted on the complete cases, and the resulting coefficients are used to predict (impute) the missing values. Crucially, only the predicted value $\hat{y}$ is used; the residual error is set to zero ($\hat{\epsilon} = 0$). Every imputed value therefore lies \textbf{exactly on the regression line}.\\
+    \textit{一种确定性的多变量方法。在完整案例上拟合回归模型，用得到的系数预测（插补）缺失值。关键是只使用预测值，残差设为零。因此每个插补值都精确位于回归线上。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+Use when you want to condition on covariates. Under MAR, this provides the \textbf{best point estimates} in terms of minimizing the expected squared prediction error for individual values.\\
+\textit{当需要基于协变量进行条件化时使用。在 MAR 下，这提供了最小化预期平方预测误差的最佳点估计。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Point estimates for the mean are generally unbiased under MCAR and MAR.\\
+        \textit{均值点估计在 MCAR 和 MAR 下通常是无偏的。}
+        \item [\ding{51}] Uses information from other variables to form better predictions than unconditional mean.\\
+        \textit{利用其他变量的信息形成比无条件均值更好的预测。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Because the method is deterministic, variability is \textbf{systematically underestimated}. The observed scatter around the regression line is eliminated.\\
+        \textit{由于方法是确定性的，变异性被系统性地低估。回归线周围的观测离散被消除。}
+        \item [\ding{55}] Distorts marginal distributions and attenuates correlations.\\
+        \textit{扭曲边际分布并减弱相关性。}
+        \item [\ding{55}] Standard errors and p-values are too small, leading to \textbf{invalid inferences} (over-confident results).\\
+        \textit{标准误和 p 值过小，导致无效的推断（过度自信的结果）。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Stochastic Regression Imputation / 随机回归插补}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    A \textbf{stochastic, multivariate} method. Like regression imputation, but adds a \textbf{random noise term}: $\hat{y} = X\hat{\beta} + \hat{\epsilon}$, where $\hat{\epsilon}$ is drawn from $N(0, \hat{\sigma}^2)$. This restores the scatter around the regression line that deterministic regression removes.\\
+    \textit{一种随机的多变量方法。类似回归插补，但添加了随机噪声项：$\hat{y} = X\hat{\beta} + \hat{\epsilon}$。这恢复了确定性回归消除的回归线周围的离散。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+When preserving the \textbf{variability and full distribution} of the data is more important than just getting the mean right. This is the first ``proper'' single imputation method.\\
+\textit{当保留数据的变异性和完整分布比仅获得正确的均值更重要时使用。这是第一种"正确"的单次插补方法。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] All point estimates (mean, variance, regression coefficients) are unbiased under MCAR and MAR.\\
+        \textit{所有点估计在 MCAR 和 MAR 下都是无偏的。}
+        \item [\ding{51}] Does not distort marginal distributions or correlations.\\
+        \textit{不扭曲边际分布或相关性。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Loss in efficiency compared to using the full data.\\
+        \textit{与使用完整数据相比效率降低。}
+        \item [\ding{55}] Still a \textbf{single imputation}: it fails to account for the additional uncertainty from the imputation process itself. Variances are still underestimated (though less than deterministic methods), and confidence intervals are too narrow.\\
+        \textit{仍然是单次插补：无法考虑插补过程本身带来的额外不确定性。方差仍被低估，置信区间仍然过窄。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Hot Deck Imputation / 热卡插补}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    An \textbf{implicit model} method that replaces missing values with \textbf{real, observed values} from similar responding units (called \textbf{donors}). Variants include: (a) simple random hot deck (random donor from the whole sample), (b) hot deck within adjustment cells (stratified by covariates), and (c) nearest-neighbor hot deck (closest match on a distance metric).\\
+    \textit{一种隐式模型方法，用来自相似响应单位（称为"供体"）的真实观测值替换缺失值。变体包括：(a) 简单随机热卡，(b) 调整单元内热卡（按协变量分层），(c) 最近邻热卡。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+When it is crucial that imputed values are \textbf{strictly plausible} — for example, categorical variables (you cannot impute ``2.7 children''), bounded continuous variables, or variables where only certain discrete values make sense.\\
+\textit{当插补值必须严格合理时使用——例如分类变量、有界连续变量或只有特定离散值有意义的变量。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Imputed values are always real, observed, plausible values from the sample.\\
+        \textit{插补值始终是样本中真实的、已观测到的、合理的值。}
+        \item [\ding{51}] Offers robustness to model mis-specification (no parametric model assumed).\\
+        \textit{对模型误设具有鲁棒性（不假设参数模型）。}
+        \item [\ding{51}] Does not distort the marginal distribution of the imputed variable.\\
+        \textit{不扭曲被插补变量的边际分布。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Cannot impute values outside the observed range (extrapolation impossible).\\
+        \textit{无法插补观测范围之外的值（无法外推）。}
+        \item [\ding{55}] Unconditional random hot deck can substantially \textbf{increase variance}.\\
+        \textit{无条件随机热卡可能大幅增加方差。}
+        \item [\ding{55}] Mathematically difficult to obtain valid standard errors.\\
+        \textit{在数学上难以获得有效的标准误。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Predictive Mean Matching (PMM) / 预测均值匹配}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    A hybrid \textbf{semi-parametric} method. A standard parametric regression model predicts values for all records. For each missing record, the algorithm finds the $k$ observed records whose predicted values are closest and randomly selects one donor's \textbf{actual observed value} as the imputation. Typical choices: $k = 1$ to $10$.\\
+    \textit{一种混合的半参数方法。标准参数回归模型为所有记录预测值。对于每个缺失记录，算法找到预测值最接近的 $k$ 个观测记录，随机选择一个供体的实际观测值作为插补。典型选择：$k = 1$ 到 $10$。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+Used as a \textbf{default routine} in many MI software packages (\texttt{mice} in R, IVEware). Particularly useful when the relationship between variables may be non-linear or when you want plausible imputed values.\\
+\textit{在许多 MI 软件包中作为默认程序使用。当变量之间的关系可能是非线性的或需要合理的插补值时特别有用。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Highly robust: if the parametric model is mis-specified (e.g., missing quadratic term), PMM still provides good coverage rates because it uses real observed values.\\
+        \textit{高度鲁棒：即使参数模型误设（例如缺少二次项），PMM 仍能提供良好的覆盖率。}
+        \item [\ding{51}] Imputed values are always real observed values — automatically plausible.\\
+        \textit{插补值始终是真实观测值——自动合理。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Nonparametric models can never beat a \textbf{correctly specified} parametric model in terms of efficiency.\\
+        \textit{非参数模型在效率方面永远无法超越正确设定的参数模型。}
+        \item [\ding{55}] Like all single imputation methods, PMM underestimates variance by ignoring imputation uncertainty.\\
+        \textit{与所有单次插补方法一样，PMM 忽略插补不确定性导致低估方差。}
+        \item [\ding{55}] With small donor pools ($k$ too small), imputed values may lack diversity.\\
+        \textit{当供体池较小时，插补值可能缺乏多样性。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{The Ultimate Con of Part I / 第一部分核心短板}
+
+\begin{tcolorbox}[summarybox]
+    \textbf{Critical Flaw}: All single imputation methods --- whether deterministic or stochastic --- treat the imputed values \textbf{exactly like original values} in subsequent analyses. Because they produce only one completed dataset, they cannot reflect the \textbf{model uncertainty} inherent in not knowing the true missing values. The consequences:\\
+    \textit{核心缺陷：所有单次插补方法都将插补值视为真实原始值。由于只产生一个完整数据集，无法反映不知道真实缺失值的模型不确定性。}
+    \begin{itemize}
+        \item Standard errors are underestimated $\Rightarrow$ overconfident results.\\
+        \textit{标准误被低估 $\Rightarrow$ 结果过于自信。}
+        \item P-values are too small $\Rightarrow$ false positives inflate.\\
+        \textit{p 值过小 $\Rightarrow$ 假阳性增加。}
+        \item Confidence intervals are too narrow $\Rightarrow$ poor coverage.\\
+        \textit{置信区间过窄 $\Rightarrow$ 覆盖率差。}
+    \end{itemize}
+    \textbf{This is why we need Multiple Imputation.}\\
+    \textit{这就是为什么我们需要多重插补。}
+\end{tcolorbox}
+% ===================================================================
+%                        PART II
+% ===================================================================
+\begin{center}
+    \Large \textbf{Part II: Multiple Imputation (MI) \& Advanced Topics}
+\end{center}
+
+\section{Multiple Imputation (MI) \& Rubin's Rules / 多重插补与 Rubin 规则}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    Each missing value is replaced by $m \ge 2$ imputed values drawn from the \textbf{predictive distribution} of the missing data given the observed data. This creates $m$ complete datasets. Each is analyzed separately with standard methods, and results are combined using \textbf{Rubin's combining rules}:\\[3pt]
+    \textbf{Point estimate}: $\bar{Q} = \frac{1}{m}\sum_{l=1}^{m} \hat{Q}_l$ (average of $m$ estimates).\\
+    \textbf{Total variance}: $T = \bar{U} + (1 + \frac{1}{m})B$, where $\bar{U}$ is the average within-imputation variance and $B$ is the between-imputation variance.\\[3pt]
+    \textit{每个缺失值被 $m \ge 2$ 个从预测分布中抽取的值替换。点估计是 $m$ 个估计的平均；总方差结合了组内方差和组间方差（含有限修正因子）。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+Use whenever you need \textbf{valid inferences} that properly account for imputation uncertainty. The key advantage over single imputation is that the between-imputation variance $B$ explicitly captures the extra uncertainty from not knowing the true missing values.\\
+\textit{当需要正确考虑插补不确定性的有效推断时使用。与单次插补相比的关键优势是组间方差 $B$ 明确捕获了不知道真实缺失值带来的额外不确定性。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Provides \textbf{consistent standard errors} that reflect imputation uncertainty.\\
+        \textit{提供反映插补不确定性的一致标准误。}
+        \item [\ding{51}] Valid results under MCAR and MAR.\\
+        \textit{在 MCAR 和 MAR 下结果有效。}
+        \item [\ding{51}] Separates the imputation task from the analysis task: the data provider can use richer information than the final analyst.\\
+        \textit{将插补任务与分析任务分离：数据提供者可以使用比最终分析者更丰富的信息。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] More cumbersome: every analysis must be repeated $m$ times and combined.\\
+        \textit{更繁琐：每项分析必须重复 $m$ 次并组合。}
+        \item [\ding{55}] Results depend on the quality of the imputation model; a bad model produces bad imputations.\\
+        \textit{结果取决于插补模型的质量；糟糕的模型产生糟糕的插补。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Joint Modeling (JM) Approach / 联合建模 (JM) 方法}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    Specifies a single \textbf{joint multivariate distribution} for all variables in the dataset (e.g., Multivariate Normal). Uses \textbf{MCMC} methods (typically the Gibbs sampler) to iteratively draw (1) parameters given data and (2) missing values given parameters. The procedure alternates between the P-step and the I-step until convergence, after which draws are taken as imputations.\\
+    \textit{为数据集中的所有变量指定单一的联合多元分布（如多元正态分布）。使用 MCMC 方法（通常是 Gibbs 采样器）迭代抽取参数和缺失值，直到收敛。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+Mostly useful when all variables are \textbf{continuous}, or when you have a strong theoretical reason to specify a particular joint distribution. It is the mathematically ``cleanest'' approach.\\
+\textit{主要在所有变量都是连续型时有用，或当有坚实的理论理由指定特定的联合分布时使用。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Mathematically \textbf{guarantees valid draws} from a specified joint model.\\
+        \textit{从数学上保证了从指定联合模型中抽取的有效性。}
+        \item [\ding{51}] No \textbf{ordering effect}: the order in which variables are processed does not matter.\\
+        \textit{无顺序效应：变量处理顺序不影响结果。}
+        \item [\ding{51}] Strictly congenial with models derived from the same joint distribution.\\
+        \textit{与从相同联合分布导出的模型严格相合。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Convergence of MCMC can be slow, especially with high-dimensional data.\\
+        \textit{MCMC 的收敛可能很慢，尤其是高维数据。}
+        \item [\ding{55}] Struggles with multicollinearity, perfect prediction, and complex data structures (logical constraints, skip patterns).\\
+        \textit{难以处理多重共线性、完美预测和复杂数据结构。}
+        \item [\ding{55}] Very problematic with many categorical variables (too many parameters).\\
+        \textit{当分类变量较多时非常成问题（参数过多）。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Sequential Regression (SRMI / FCS) / 顺序回归多元插补}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    Instead of specifying a massive joint distribution, \textbf{conditional distributions} are specified for each variable separately. The method iterates through variables one by one (``chained equations''): for each variable with missing data, a univariate model is fitted using all other variables as predictors, and missing values are drawn from the fitted distribution. Previously imputed values from the current cycle are used as predictors.\\
+    \textit{不指定庞大的联合分布，而是为每个变量单独指定条件分布。该方法逐个变量迭代：对于每个有缺失数据的变量，使用所有其他变量作为预测因子拟合单变量模型，并从拟合分布中抽取缺失值。}
+\end{tcolorbox}
+
+\subsection{Usage / 使用场景}
+Highly recommended for \textbf{real-world data} with a mixture of variable types (continuous, binary, ordinal, nominal categorical) or complex constraints like bounds, skip patterns, or semi-continuous variables.\\
+\textit{强烈推荐用于具有混合变量类型或复杂约束的真实世界数据。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Extremely flexible: can use different model types (linear, logistic, Poisson, CART) for different variables.\\
+        \textit{极其灵活：可以为不同变量使用不同的模型类型。}
+        \item [\ding{51}] Reduces the complex problem of sampling from a multivariate distribution to simpler univariate draws.\\
+        \textit{将从多元分布采样的复杂问题简化为更简单的单变量抽样。}
+        \item [\ding{51}] Easy to handle semi-continuous variables, linear constraints, and skip patterns.\\
+        \textit{易于处理半连续变量、线性约束和跳题模式。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Lacks the theoretical guarantee that a true \textbf{joint distribution} actually exists for the set of specified conditionals (the conditionals may be ``incompatible'').\\
+        \textit{缺乏理论保证指定的条件分布集确实存在对应的联合分布（条件可能"不兼容"）。}
+        \item [\ding{55}] Results may depend on the order in which variables are imputed (though this effect is usually small in practice).\\
+        \textit{结果可能取决于变量插补的顺序（尽管在实践中这种效应通常很小）。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Uncongeniality / 不相合性}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    Uncongeniality occurs when the \textbf{imputation model} (used to fill in data) differs from the \textbf{analyst's model} (used for final analysis). This commonly happens when the person generating the imputations is not the same person performing the analysis, or when a general-purpose imputation model is used for many different downstream analyses.\\
+    \textit{当插补模型与分析模型不一致时发生不相合性。这通常发生在生成插补的人和执行分析的人不是同一人时。}
+\end{tcolorbox}
+
+\subsection{Properties / 特性}
+\begin{itemize}
+    \item \textbf{Imputer has MORE info} than analyst (e.g., uses auxiliary variables the analyst ignores): point estimates remain unbiased, but MI variance estimator is \textbf{conservative} (wider CIs, some efficiency lost). \textit{This is acceptable.}\\
+    \textit{插补者信息更多：点估计无偏，但方差估计保守。这是可以接受的。}
+    \item \textbf{Imputer has LESS info} than analyst: results are \textbf{potentially biased}. \textit{This is dangerous.}\\
+    \textit{插补者信息更少：结果可能有偏差。这是危险的。}
+\end{itemize}
+
+\subsection{Rule of Thumb / 经验法则}
+\begin{tcolorbox}[summarybox]
+    \textbf{Strategy}: Always include as many variables in the imputation model as possible. Specifically: (1) all variables in the analysis model, (2) variables that predict the target's variance, and (3) variables that explain the missingness mechanism. A ``richer'' imputation model is always safer than a ``leaner'' one.\\
+    \textit{策略：尽可能在插补模型中包含更多变量。"更丰富"的插补模型总是比"更精简"的更安全。}
+\end{tcolorbox}
+
+% ===================================================================
+%                        PART III
+% ===================================================================
+\begin{center}
+    \Large \textbf{Part III: Advanced Practical Concepts \& Diagnostics}
+\end{center}
+
+\section{FMI \& Choosing $m$ / 缺失信息比例与 $m$ 的选择}
+
+\subsection{Concept / 核心概念}
+\begin{tcolorbox}[defbox]
+    \textbf{Fraction of Missing Information (FMI)}: The actual amount of information lost due to missing data. It is \textbf{not} just the percentage of missing rows --- it depends on the specific parameter being estimated and how well the observed data can predict the missing values. Formally, it is related to the ratio of between-imputation variance to total variance.\\[3pt]
+    \textbf{Monte Carlo Error (MCE)}: The additional uncertainty in your MI results caused by using a finite number of imputations ($m$) rather than an infinite number. As $m \to \infty$, MCE disappears.\\[3pt]
+    \textit{FMI：由于缺失而实际损失的信息量。它不仅仅是缺失行的百分比——它取决于正在估计的特定参数。MCE：由于使用有限 $m$ 而产生的额外不确定性。}
+\end{tcolorbox}
+
+\subsection{Rule of Thumb / 经验法则}
+Based on reproducibility: $m > 100 \times \text{FMI}$. If you only care about point estimates, a small $m$ (5--10) is highly efficient. If you are ``hunting for significance'' or need accurate p-values, use $m = 100$ or more.\\
+\textit{基于可重复性：$m > 100 \times \text{FMI}$。仅点估计时 $m = 5 \sim 10$ 即可；若需准确 p 值，$m = 100$ 更佳。}
+
+\subsection{Pros \& Cons / 优缺点}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Large $m$ makes standard errors and p-values highly stable and reproducible across runs.\\
+        \textit{较大的 $m$ 使标准误和 p 值在不同运行之间高度稳定且可重复。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Computationally cumbersome: both imputation and analysis must be repeated $m$ times.\\
+        \textit{计算繁琐：插补和分析都必须重复 $m$ 次。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Complex Constraints / 处理真实数据的复杂约束}
+
+\subsection{A: Semi-continuous Variables / 半连续变量}
+\begin{tcolorbox}[defbox]
+    Variables with a massive \textbf{spike at zero} but continuous otherwise (e.g., medical expenditures: many people pay \$0, others pay continuous amounts). Standard linear regression is inappropriate.\\
+    \textbf{Solution}: Two-step Sequential Regression. (1) Logit model to impute whether value is zero or positive. (2) Linear model \textit{only} on predicted-positive units.\\
+    \textit{在零点有尖峰但其他部分连续的变量。方案：两步回归。1. Logit 预测是否为零。2. 仅对预测为正的单位使用线性模型。}
+\end{tcolorbox}
+
+\subsection{B: Linear Constraints (Bounded) / 线性约束}
+\begin{tcolorbox}[defbox]
+    Imputed value is bounded by another variable (e.g., tax $\le$ income).\\
+    \textbf{Solution}: (1) Express as proportion: $z = \text{tax}/\text{income}$. (2) Logit transform $z$ to stretch to $(-\infty, \infty)$. (3) Impute using linear regression. (4) Back-transform to original scale.\\
+    \textit{插补值受另一变量限制。方案：(1) 计算比例。(2) Logit 变换。(3) 线性回归插补。(4) 反向变换。}
+\end{tcolorbox}
+
+\subsection{C: Skip Patterns / 跳题模式}
+\begin{tcolorbox}[defbox]
+    Survey questions only asked if a filter is positive (e.g., ``Do you smoke?'' $\to$ ``How many/day?'').\\
+    \textbf{If filter is observed}: separate imputation models per group.\\
+    \textbf{If filter is also missing}: include binary skip indicator + constrain covariances.\\
+    \textit{仅在筛选问题为正时询问的问题。如果筛选已观测，使用分组模型；如果筛选也缺失，加入二进制跳题指标并约束协方差。}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Evaluating Imputation Quality (Diagnostics) / 评估插补质量}
+
+\subsection{External Diagnostics / 外部诊断}
+\begin{tcolorbox}[defbox]
+    Evaluate imputations using \textbf{external knowledge}: no negative incomes, no pregnant fathers, no implausible ages. Compare marginal distributions of observed vs.\ imputed data.\\
+    \textbf{Important caveat}: Under \textbf{MAR} (not MCAR), we \textit{expect} observed and imputed distributions to differ. A difference does not necessarily mean the model is bad!\\
+    \textit{基于外部知识评估：无负收入、无怀孕男性。注意在 MAR 下观测与插补分布本应不同。}
+\end{tcolorbox}
+
+\subsection{Internal Diagnostics / 内部诊断}
+\begin{tcolorbox}[defbox]
+    Check the imputation model's \textbf{internal assumptions} just like standard regression diagnostics: Q-Q plots for normality, residuals vs.\ fitted values for homoscedasticity, binned residual plots for logistic regression. Any tool used for complete-data modeling applies here.\\
+    \textit{检查插补模型的内部假设：Q-Q 图检验正态性，残差图检验方差齐性。任何用于完整数据建模的诊断工具都适用于此。}
+\end{tcolorbox}
+
+% ===================================================================
+%                        PART IV
+% ===================================================================
+\begin{center}
+    \Large \textbf{Part IV: Final Summary \& Practical Workflow}
+\end{center}
+
+\section{The Core Philosophy / 核心哲学}
+
+\begin{tcolorbox}[summarybox]
+    \textbf{The Golden Rule}: The goal of imputation is \textbf{NOT} to recover exact missing values. The \textbf{only goal} is to enable valid statistical inferences using standard complete-data procedures.\\[3pt]
+    \textbf{Requirements}: Imputations must be \textbf{stochastic} (to preserve variance) and \textbf{multivariate} (to preserve relationships). Assumptions must always be \textbf{explicit}.\\[3pt]
+    \textbf{Limitation}: Imputation is never free from assumptions. You can test model assumptions (normality, linearity), but you \textbf{cannot definitively test} the response mechanism (e.g., proving data is MAR rather than MNAR).\\[3pt]
+    \textit{黄金原则：目标不是恢复精确的缺失值，而是进行有效的统计推断。插补必须是随机的且多元的。假设必须明确公开。无法最终证明数据是 MAR 还是 MNAR。}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Final Showdown: JM vs. SR / 终极对比}
+
+\begin{tcolorbox}[defbox]
+    \textbf{JM}: Mathematically valid draws, congenial with MVN, no ordering effect. But difficult to implement, slow convergence, and struggles with multicollinearity, perfect prediction, small samples, and complicated data structures.\\[3pt]
+    \textbf{SR (Sequential Regression / FCS)}: Practical, handles mixed types and constraints easily, implemented in \texttt{mice} (R) and IVEware. But lacks theoretical guarantee of a true joint distribution.\\[3pt]
+    \textit{JM：数学上最严谨，但实施困难。SR/FCS：更具实践性，但缺乏联合分布理论保证。}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Practical Workflow / 实践操作流程}
+
+\subsection{Step-by-Step Guide / 步骤指南}
+\begin{enumerate}
+    \item \textbf{Step 1 --- Exploration}: Explore missing data patterns. How much is missing? Which variables? Is it monotone or arbitrary?\\
+    \textit{探索缺失数据模式。}
+    \item \textbf{Step 2 --- Baseline}: Fit your substantive model on complete records first. Familiarize yourself with the data and check basic assumptions.\\
+    \textit{先用完整案例拟合实质模型，熟悉数据。}
+    \item \textbf{Step 3 --- Variable Selection}: Include: (a) all variables in your analysis model, (b) strong predictors of the outcome, and (c) variables that predict missingness.\\
+    \textit{变量选择：纳入分析模型变量、结果预测因子和缺失预测因子。}
+    \item \textbf{Step 4/5 --- Initial Run}: Choose imputation models and generate a small number ($m = 5$) to save time.\\
+    \textit{选择模型，生成少量插补。}
+    \item \textbf{Step 6 --- Diagnostics}: Evaluate using internal and external diagnostics.\\
+    \textit{使用内外部诊断进行评估。}
+    \item \textbf{Step 7/8 --- Analysis \& Refinement}: Fit your model. If results are clear-cut, $m = 5$ suffices. If borderline or p-value-sensitive, generate more ($m = 100$).\\
+    \textit{拟合模型。结果明确则 $m=5$ 足够；需精确 p 值则增加 $m$。}
+    \item \textbf{Step 9 --- Sensitivity}: Explore sensitivity to departures from MAR (what if data is MNAR?).\\
+    \textit{探索对 MAR 假设偏离的敏感性（如果数据是 MNAR 会怎样？）。}
+\end{enumerate}
+
+% ===================================================================
+%                     SUPPLEMENT
+% ===================================================================
+\begin{center}
+    \Large \textbf{Supplement: Advanced Technical Topics}
+\end{center}
+
+\section{MCMC \& the Gibbs Sampler}
+
+\subsection{Concept \& Definition}
+\begin{tcolorbox}[defbox]
+    The Gibbs Sampler is an iterative MCMC algorithm used in Joint Modeling to draw from the joint posterior distribution of missing data and model parameters. Each iteration has two steps:\\[3pt]
+    \textbf{1. Posterior Step (P-step)}: Draw new parameter values $\theta^{(t)}$ from $P(\theta \mid Y_{\text{obs}}, Y_{\text{mis}}^{(t-1)})$.\\
+    \textbf{2. Imputation Step (I-step)}: Draw new missing values $Y_{\text{mis}}^{(t)}$ from $P(Y_{\text{mis}} \mid Y_{\text{obs}}, \theta^{(t)})$.\\[3pt]
+    Alternating these steps creates a Markov Chain that, after a \textbf{burn-in period}, produces draws from the correct joint posterior. For MI, you save $m$ draws spaced far enough apart to reduce autocorrelation.\\
+    \textit{Gibbs 采样器是一种迭代 MCMC 算法。每次迭代包含 P 步（抽取参数）和 I 步（抽取缺失值）。经过燃烧期后，从正确的联合后验分布产生抽样。}
+\end{tcolorbox}
+
+\subsection{Convergence Monitoring / 收敛监测}
+\begin{itemize}
+    \item \textbf{Trace plots}: Plot imputed statistics (mean, variance of each variable) across iterations. Should look like ``white noise'' with no visible trend or drift.\\
+    \textit{迹图：绘制每次迭代的插补统计量。应呈现"白噪声"模式，无趋势。}
+    \item \textbf{Autocorrelation}: Successive draws should be weakly correlated. High autocorrelation $=$ slow mixing; increase the thinning interval between saved draws.\\
+    \textit{自相关：连续抽样应弱相关。高自相关意味着混合慢；增加稀疏间隔。}
+    \item \textbf{Gelman-Rubin $\hat{R}$}: Run multiple chains from \textbf{dispersed starting values}. $\hat{R} \approx 1$ (typically $< 1.1$) indicates convergence; $\hat{R} \gg 1$ means chains have not mixed.\\
+    \textit{从不同起始值运行多条链。$\hat{R} \approx 1$ 表示收敛；$\hat{R} \gg 1$ 表示链尚未混合。}
+\end{itemize}
+
+\subsection{Pros \& Cons}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Mathematically principled; guaranteed convergence to the correct distribution.\\
+        \textit{数学上严谨；保证收敛到正确的分布。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Can be very slow with high-dimensional or highly correlated data.\\
+        \textit{在高维或高度相关数据中可能非常缓慢。}
+        \item [\ding{55}] No single definitive convergence test --- monitoring is subjective and requires expertise.\\
+        \textit{没有单一确定性收敛检验——监测是主观的。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Imputation Models for Categorical Variables}
+
+\subsection{Concept \& Definition}
+\begin{tcolorbox}[defbox]
+    \textbf{Binary variables}: Use \textbf{Logistic Regression} (logit model). Draw a latent continuous variable; map to 0/1 via threshold.\\[3pt]
+    \textbf{Ordinal variables}: Use \textbf{Ordered Probit/Logit}. Draw a latent variable; map to ordered categories using multiple thresholds ($c_1 < c_2 < \ldots$).\\[3pt]
+    \textbf{Unordered categorical variables}: Use \textbf{Multinomial Logit} or the \textbf{Maximum Indicant Model}. In the Maximum Indicant Model, a latent continuous variable is drawn for \textit{each} category; the category with the highest latent value is selected as the imputation. This elegantly avoids the IIA (Independence of Irrelevant Alternatives) assumption.\\[3pt]
+    \textit{二元变量用 Logistic 回归。有序变量用有序 Probit/Logit。无序分类变量用多项式 Logit 或最大指标模型（为每个类别抽取潜在变量，最大者获选）。}
+\end{tcolorbox}
+
+\subsection{When to Use / Example}
+\begin{itemize}
+    \item \textbf{Binary}: Employment status, yes/no diagnoses. \textit{(就业状态、是/否诊断)}
+    \item \textbf{Ordinal}: Likert scales, education level, pain severity. \textit{(李克特量表、教育水平)}
+    \item \textbf{Unordered}: Ethnicity, region, marital status. \textit{(民族、地区、婚姻状况)}
+\end{itemize}
+
+\subsection{Pros \& Cons}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Respects data type: imputed values are always valid categories.\\
+        \textit{尊重数据类型：插补值始终是有效类别。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Multinomial logit requires many parameters (problematic with sparse cells).\\
+        \textit{多项式 logit 需要大量参数（稀疏单元格时有问题）。}
+        \item [\ding{55}] Highly susceptible to \textbf{perfect prediction} with few observations per category.\\
+        \textit{每个类别观测值较少时极易产生完美预测。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Multicollinearity \& Perfect Prediction (In-Depth)}
+
+\subsection{Concept \& Definition}
+\begin{tcolorbox}[defbox]
+    \textbf{Perfect Prediction}: In logistic imputation, if covariates perfectly separate the outcome (e.g., all males in a cell are employed), $\hat{\beta} \to \pm\infty$ and the algorithm diverges.\\[3pt]
+    \textbf{Multicollinearity}: Highly correlated predictors cause $\text{Var}(\hat{\beta})$ to blow up. Posterior draws become wildly unstable $\to$ erratic or impossible imputed values.\\
+    \textit{完美预测：协变量完美分离结果时 $\hat{\beta} \to \pm\infty$。多重共线性：高度相关的预测变量导致系数方差爆炸。}
+\end{tcolorbox}
+
+\subsection{Solutions / 解决方案}
+\begin{enumerate}
+    \item \textbf{Drop problematic variables}: Remove redundant predictors (loses information).\\
+    \textit{删除冗余预测变量（丢失信息）。}
+    \item \textbf{Collapse sparse categories}: Merge levels to eliminate empty cells.\\
+    \textit{合并稀疏类别以消除空单元格。}
+    \item \textbf{Data Augmentation}: For perfect prediction, append weighted pseudo-records that ``break'' the separation.\\
+    \textit{对于完美预测，附加加权伪记录以"打破"分离。}
+    \item \textbf{Use CART}: Tree-based methods are inherently immune to both problems.\\
+    \textit{使用 CART：基于树的方法天然免疫这两个问题。}
+\end{enumerate}
+
+% -------------------------------------------------------------------
+\section{CART \& Bayesian Bootstrap for Imputation}
+
+\subsection{Concept \& Definition}
+\begin{tcolorbox}[defbox]
+    \textbf{CART}: A non-parametric method that recursively partitions the predictor space into homogeneous subsets using binary splits, building a tree. For imputation, a tree is grown on observed data; missing values are drawn from donors in the appropriate terminal leaf.\\[3pt]
+    \textbf{Bayesian Bootstrap}: Instead of simple random sampling from the leaf, assigns random \textbf{Dirichlet-distributed weights} to observed units. This introduces proper Bayesian uncertainty, making the imputation ``proper'' in Rubin's sense (not just a random hot deck).\\
+    \textit{CART：非参数方法，通过递归二元分割建立树。贝叶斯自助法：对观测单位赋予狄利克雷分布权重，引入适当的贝叶斯不确定性。}
+\end{tcolorbox}
+
+\subsection{Pros \& Cons}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Avoids perfect prediction and multicollinearity completely.\\
+        \textit{完全避免完美预测和多重共线性。}
+        \item [\ding{51}] Automatically captures non-linear relationships and interactions.\\
+        \textit{自动捕获非线性关系和交互作用。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Hard to motivate from strict Bayesian theory; never perfectly congenial.\\
+        \textit{难以从严格贝叶斯理论解释；永远不会完美相合。}
+        \item [\ding{55}] Struggles with smooth response functions (step-function approximation).\\
+        \textit{难以近似平滑的响应函数（阶梯函数近似）。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Multi-Component Estimands \& Hypothesis Testing}
+
+\subsection{Concept \& Definition}
+\begin{tcolorbox}[defbox]
+    When testing \textbf{multiple parameters simultaneously} (e.g., $H_0: \beta_1 = \beta_2 = 0$) in MI data, scalar Rubin's rules do not apply directly.\\[3pt]
+    \textbf{Adjusted Wald Test ($D_1$)}: Pools $m$ Wald statistics. Uses average estimates + combined variance-covariance matrix $\to$ $F$-statistic.\\[3pt]
+    \textbf{Likelihood Ratio Test ($D_3$, Meng \& Rubin)}: Pools $m$ likelihood ratio statistics. Compares average log-likelihood under $H_0$ vs.\ $H_1$, adjusted for between-imputation variability.\\
+    \textit{$D_1$（Wald 检验）：汇集 Wald 统计量。$D_3$（LRT）：汇集似然比统计量，调整组间变异。}
+\end{tcolorbox}
+
+\subsection{Pros \& Cons}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] $D_1$: Simple; only needs estimates and variance matrices.\\
+        \textit{$D_1$：简单；只需估计值和方差矩阵。}
+        \item [\ding{51}] $D_3$: More powerful for small samples; uses full likelihood.\\
+        \textit{$D_3$：小样本更有力；使用完整似然。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] $D_1$ unstable when many parameters tested relative to $n$.\\
+        \textit{$D_1$ 当参数数量相对 $n$ 较大时不稳定。}
+        \item [\ding{55}] $D_3$ requires fitting $H_0$ model for each dataset (computationally heavier).\\
+        \textit{$D_3$ 需要为每个数据集拟合 $H_0$ 模型。}
+    \end{itemize}
+\end{tcolorbox}
+
+% -------------------------------------------------------------------
+\section{Skip Patterns \& Large Datasets in JM}
+
+\subsection{Skip Patterns / 跳题模式}
+\begin{tcolorbox}[defbox]
+    A ``skip pattern'' means follow-up questions are only asked if a filter is positive (``Do you smoke?'' $\to$ ``How many/day?''). Non-smokers' ``cigarettes/day'' is \textbf{structurally missing}, not randomly missing.\\[3pt]
+    \textbf{Solution A}: Filter fully observed $\to$ separate imputation models per group.\\
+    \textbf{Solution B}: Filter also missing $\to$ binary skip indicator + constrain covariance structure.\\
+    \textit{跳题模式：后续问题仅在筛选问题为正时才被提问。方案A：分组建模。方案B：加入跳题指标并约束协方差。}
+\end{tcolorbox}
+
+\subsection{Large Datasets in JM / 大数据集的联合建模}
+\begin{tcolorbox}[defbox]
+    With 100+ variables, JM faces a near-singular covariance matrix.\\[3pt]
+    \textbf{Ridge Regression (Diagonal Inflation)}: Add $\lambda$ to diagonal: $\Sigma + \lambda I$. Shrinks coefficients toward zero, stabilizes matrix inversion. Trade-off: small bias from shrinkage.\\
+    \textit{当变量超过100个时，JM 面临近奇异协方差矩阵。岭回归：在对角线加 $\lambda$，稳定矩阵求逆。代价：引入少量偏差。}
+\end{tcolorbox}
+
+\subsection{Pros \& Cons}
+\begin{tcolorbox}[prosbox]
+    \begin{itemize}
+        \item [\ding{51}] Skip handling prevents confusing structural with random missingness.\\
+        \textit{跳题处理防止将结构性缺失与随机缺失混淆。}
+        \item [\ding{51}] Ridge stabilizes JM without dropping variables entirely.\\
+        \textit{岭回归在不完全删除变量的情况下稳定 JM。}
+    \end{itemize}
+\end{tcolorbox}
+\begin{tcolorbox}[consbox]
+    \begin{itemize}
+        \item [\ding{55}] Skip covariance constraints require Metropolis-Hastings within Gibbs $\to$ extremely slow.\\
+        \textit{跳题协方差约束需要在 Gibbs 中嵌入 Metropolis-Hastings——极慢。}
+        \item [\ding{55}] Ridge $\lambda$ choice is somewhat arbitrary.\\
+        \textit{岭回归 $\lambda$ 的选择某种程度上是任意的。}
+    \end{itemize}
+\end{tcolorbox}
+
+\end{document}

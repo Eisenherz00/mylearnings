@@ -1,0 +1,201 @@
+---
+title: "Exercise Unit 4 – Analyzing Multiply Imputed Data"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+knit: (function(input, ...) {
+    rmarkdown::render(
+      input,
+      output_dir = "../output"
+    )
+  })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+The file `PASS.RData` contains the dataset `PASS.imp`, which consists of a subset of variables and records from the campus file of the PASS study. This exercise focuses on analyzing multiply imputed data using Rubin’s rules.
+
+Variables included in the dataset:
+- `hhsize`: Household size.
+- `hhtype`: Household type.
+- `hhincome`: Household income.
+- `benefits`: Unemployment benefit recipient.
+- `depind`: Deprivation index.
+- `livspace`: Living space in square meters.
+
+```{r load-data}
+# Loading PASS.RData (contains PASS.imp) 
+# and PASS_long.RData (contains PASS.long) as a fallback
+load("../PASS.RData")
+load("../PASS_long.RData")
+```
+
+---
+
+# Part (a): Extracting Imputed Datasets
+
+**Question:** Extract the multiply imputed datasets using the `complete` command from the `mice` package. Store the imputed datasets in the long format and call this dataset `PASS.long`.
+
+## Answer
+
+```{r part-a}
+library(mice)
+
+# Extracting the datasets in long format
+# PASS.long <- complete(PASS.imp, action = "long")
+
+# Since we already have PASS.long from the RData file, 
+# we verify its structure:
+str(PASS.long)
+```
+
+---
+
+# Part (b): Computing Point Estimate (q-bar)
+
+**Question:** Compute the final point estimate for the regression coefficient of "couple with children under 16" using `PASS.long`.
+
+## Answer
+
+We are interested in the regression:  
+`log(depind) ~ log(hhincome) + hhtype + livspace + benefits`
+
+We need to fit this model for each imputation $l = 1, \dots, m$ and average the coefficients.
+
+```{r part-b}
+# List of individual datasets based on .imp variable
+m <- length(unique(PASS.long$.imp))
+q_hat <- numeric(m)
+u_hat <- numeric(m)
+
+target_coef <- "hhtypecouple with children <16"
+
+for (i in 1:m) {
+  # Filter for the i-th imputation
+  data_i <- PASS.long[PASS.long$.imp == i, ]
+  
+  # Fit the regression
+  # Note: depind and hhincome are logged as requested
+  mod <- lm(log(depind) ~ log(hhincome) + hhtype + livspace + benefits, data = data_i)
+  
+  # Extract point estimate and its variance (SE squared)
+  sums <- summary(mod)
+  q_hat[i] <- coef(mod)[target_coef]
+  u_hat[i] <- sums$coefficients[target_coef, "Std. Error"]^2
+}
+
+# Final point estimate (average of individual estimates)
+q_bar <- mean(q_hat)
+q_bar
+```
+
+---
+
+# Part (c): Computing Total Variance (T)
+
+**Question:** Compute the estimated variance of the regression coefficient ($T$).
+
+## Answer
+
+Rubin's rule for total variance $T$ is:
+$$T = \bar{U} + (1 + 1/m) B$$
+where $\bar{U}$ is the within-imputation variance and $B$ is the between-imputation variance.
+
+```{r part-c}
+# Within-imputation variance (average of individual variances)
+u_bar <- mean(u_hat)
+
+# Between-imputation variance (variance of the point estimates)
+b <- var(q_hat)
+
+# Total variance
+t_total <- u_bar + (1 + 1/m) * b
+t_total
+```
+
+---
+
+# Part (d): 95% Confidence Interval
+
+**Question:** Compute a 95% confidence interval around your estimated regression coefficient.
+
+## Answer
+
+We need the degrees of freedom for the t-distribution. First define the relative increase in variance due to nonresponse:
+$$r = \frac{(1 + 1/m) B}{\bar{U}}$$
+Then the degrees of freedom are:
+$$df = (m - 1) (1 + 1/r)^2$$
+
+```{r part-d}
+# Relative increase in variance
+r <- (1 + 1/m) * b / u_bar
+
+# Degrees of freedom (simple formula)
+df <- (m - 1) * (1 + 1/r)^2
+
+# Critical value (t-distribution)
+alpha <- 0.05
+t_crit <- qt(1 - alpha/2, df)
+
+# Confidence interval
+ci_low <- q_bar - t_crit * sqrt(t_total)
+ci_high <- q_bar + t_crit * sqrt(t_total)
+
+c(ci_low, ci_high)
+```
+
+---
+
+# Part (e): P-value
+
+**Question:** Can you compute the p-value for this coefficient?
+
+## Answer
+
+```{r part-e}
+# T-statistic
+t_stat <- q_bar / sqrt(t_total)
+
+# Two-sided p-value
+p_val <- 2 * (1 - pt(abs(t_stat), df))
+p_val
+```
+
+---
+
+# Part (f): Validation Using `pool()`
+
+**Question:** Validate your results using the `pool` command from the `mice` package.
+
+## Answer
+
+```{r part-f}
+# Using the full mids object with with() and pool()
+fit <- with(PASS.imp, lm(log(depind) ~ log(hhincome) + hhtype + livspace + benefits))
+pooled_results <- pool(fit)
+summary(pooled_results)
+```
+
+**Discussion:**
+The results from `pool()` should be very close to our manual calculations. Small differences might occur if `pool()` uses more advanced degrees of freedom adjustments (like Barnard-Rubin) or if there are differences in how the factor levels are handled.
+
+---
+
+# Part (g): Interpretation
+
+**Question:** Interpret the results regarding the impact of having children under the age of 16 in the household.
+
+## Answer
+
+The coefficient for **`hhtypecouple with children <16`** represents the difference in the expected log(deprivation index) between a couple with children under 16 and the reference category (single households), holding income, living space, and benefits status constant.
+
+If the coefficient is positive and significant (p < 0.05), it suggests that households with children under 16 experience higher deprivation scores compared to the reference group, after adjusting for other factors. Because the outcome is log-transformed, the percentage increase in the deprivation index can be approximated as $(\exp(\beta) - 1) \times 100\%$.

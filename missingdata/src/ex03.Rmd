@@ -1,0 +1,243 @@
+---
+title: "Exercise Unit 3 – Missing Data Analysis with NHANES Data"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+knit: (function(input, ...) {
+    rmarkdown::render(
+      input,
+      output_dir = "../output"
+    )
+  })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+The file `nhanes.RData` contains a modified dataset based on selected variables from the National Health and Nutrition Examination Survey (NHANES) 2017-2018 collected by the National Center for Health Statistics.
+
+The following variables are included in the dataset:
+- `gender`: 2=female.
+- `age`: Age in years, top-coded at 80 years.
+- `education`: 1=Less than 9th grade, 2=9-11th grade, 3=High school graduate/GED, 4=Some college or AA degree, 5=College graduate or above.
+- `famsize`: Total number of people in the family, top-coded at 7.
+- `child5`: Number of children 5 years or younger in household.
+- `bp_sys`: Systolic blood pressure.
+- `bmi`: Body Mass Index.
+
+```{r load-data}
+load("../nhanes.RData")
+```
+
+---
+
+# Part (a): Identifying Nonresponse
+
+**Question:** Inspect which variables in the dataset are affected by nonresponse.
+
+## Answer
+
+```{r part-a}
+# Check for missing values in each variable
+missing_summary <- colSums(is.na(nhanes))
+missing_summary
+```
+
+**Discussion:**
+The only variable affected by nonresponse is **`bp_sys`** (Systolic Blood Pressure), with 571 missing values out of 5165 observations.
+
+---
+
+# Part (b): Mean Imputation
+
+**Question:** Impute the missing values using mean imputation.
+
+## Answer
+
+```{r part-b}
+# Create a copy for mean imputation
+nhanes_mean <- nhanes
+
+# Impute missing bp_sys with its mean
+mean_bp <- mean(nhanes$bp_sys, na.rm = TRUE)
+nhanes_mean$bp_sys[is.na(nhanes_mean$bp_sys)] <- mean_bp
+
+# Verify no NAs remain
+sum(is.na(nhanes_mean$bp_sys))
+```
+
+---
+
+# Part (c): Correlations on Observed Cases
+
+**Question:** You assume relationships between `age` and `bp_sys` as well as between `bmi` and `bp_sys`. Check these by computing correlations using only the fully observed cases.
+
+## Answer
+
+```{r part-c}
+# Compute correlations using only observed cases
+cor_age_obs <- cor(nhanes$age, nhanes$bp_sys, use = "complete.obs")
+cor_bmi_obs <- cor(nhanes$bmi, nhanes$bp_sys, use = "complete.obs")
+
+cat("Correlation (Age, BP):", round(cor_age_obs, 4), "\n")
+cat("Correlation (BMI, BP):", round(cor_bmi_obs, 4), "\n")
+```
+
+---
+
+# Part (d): Correlations on Mean Imputed Data
+
+**Question:** Compute the same two correlations as in Exercise (c) but this time use your imputed data from Exercise (b). Explain the difference in the results.
+
+## Answer
+
+```{r part-d}
+# Compute correlations on mean-imputed data
+cor_age_mean <- cor(nhanes_mean$age, nhanes_mean$bp_sys)
+cor_bmi_mean <- cor(nhanes_mean$bmi, nhanes_mean$bp_sys)
+
+cat("Mean Imputed Correlation (Age, BP):", round(cor_age_mean, 4), "\n")
+cat("Mean Imputed Correlation (BMI, BP):", round(cor_bmi_mean, 4), "\n")
+```
+
+**Explanation:**
+The correlations computed on the mean-imputed data are **smaller** in magnitude than those computed on the observed cases. This is because mean imputation places all missing values exactly at the mean, which has no relationship with `age` or `bmi` for those specific cases. This "spike" at the center reduces the overall correlation between the variables, a phenomenon known as **attenuation**.
+
+---
+
+# Part (e): Stochastic Regression Imputation
+
+**Question:** Impute the missing values based on stochastic regression imputation using `age` and `bmi` as predictors.
+
+## Answer
+
+Following the step-by-step instructions:
+
+```{r part-e}
+# 1. Fit linear regression model
+model_stochastic <- lm(bp_sys ~ age + bmi, data = nhanes)
+
+# 2. Extract coefficients and residual variance
+beta_hat <- coef(model_stochastic)
+res_var  <- summary(model_stochastic)$sigma^2
+
+# 3. Generate matrix X (including intercept)
+X <- model.matrix(~ age + bmi, data = nhanes)
+
+# 4. Generate predicted values
+# Using matrix multiplication (X %*% beta_hat)
+y_hat <- X %*% beta_hat
+
+# 5. Add a residual drawn from N(0, res_var)
+set.seed(123) # For reproducibility
+imputed_noise <- y_hat + rnorm(nrow(nhanes), mean = 0, sd = sqrt(res_var))
+
+# 6. Generate imputed version of bp_sys
+nhanes_stoch <- nhanes
+# Only replace missing values
+missing_idx <- is.na(nhanes$bp_sys)
+nhanes_stoch$bp_sys[missing_idx] <- imputed_noise[missing_idx]
+
+# Check summary of bp_sys
+summary(nhanes_stoch$bp_sys)
+```
+
+---
+
+# Part (f): Available Case Analysis (ACA) Regression
+
+**Question:** Fit a linear regression of blood pressure on an indicator for children under 5 using all other variables as controls, using available case analysis.
+
+## Answer
+
+```{r part-f}
+# ACA regression (R's lm() defaults to complete cases of the variables in the model)
+model_aca <- lm(bp_sys ~ I(child5 > 0) + gender + age + education + famsize + bmi, 
+                data = nhanes)
+summary(model_aca)
+```
+
+---
+
+# Part (g): Regression with Mean Imputation
+
+**Question:** Fit the same regression model using the imputed version of `bp_sys` from Part (b).
+
+## Answer
+
+```{r part-g}
+model_mean <- lm(bp_sys ~ I(child5 > 0) + gender + age + education + famsize + bmi, 
+                 data = nhanes_mean)
+summary(model_mean)
+```
+
+---
+
+# Part (h): Regression with Stochastic Imputation
+
+**Question:** Fit the same regression model using the imputed version of `bp_sys` from Part (e).
+
+## Answer
+
+```{r part-h}
+model_stoch <- lm(bp_sys ~ I(child5 > 0) + gender + age + education + famsize + bmi, 
+                  data = nhanes_stoch)
+summary(model_stoch)
+```
+
+---
+
+# Part (i): Comparison of Findings
+
+**Question:** Compare your findings from Exercises (f), (g), and (h). Discuss point estimates, SEs, and p-values. Which results would you trust the most?
+
+## Answer
+
+```{r part-i}
+# Helper function to extract results using base R
+get_row <- function(model, name) {
+  s <- summary(model)$coefficients
+  row_idx <- "I(child5 > 0)TRUE"
+  if (row_idx %in% rownames(s)) {
+    res <- s[row_idx, c("Estimate", "Std. Error", "Pr(>|t|)")]
+    return(data.frame(
+      Method = name,
+      Estimate = res[1],
+      SE = res[2],
+      P_Value = res[3]
+    ))
+  } else {
+    return(NULL)
+  }
+}
+
+# Combine results
+results_summary <- rbind(
+  get_row(model_aca, "ACA"),
+  get_row(model_mean, "Mean Imputation"),
+  get_row(model_stoch, "Stochastic Imputation")
+)
+
+# Display table
+knitr::kable(results_summary, digits = 4)
+```
+
+**Discussion:**
+
+1. **Point Estimates:** The point estimates for the effect of children in the household vary between methods. Mean imputation tends to produce biased results because it ignores the relationships between variables during the imputation process.
+2. **Standard Errors (SEs):** 
+   - **Mean Imputation** typically has the smallest standard errors. This is **misleading** because it treats imputed values as real, certain data, failing to account for imputation uncertainty.
+   - **ACA** has larger SEs due to the reduced sample size.
+   - **Stochastic Imputation** restores the variability, but because it is a single imputation, it also slightly underestimates the true uncertainty (though less so than mean imputation).
+3. **P-values:** The significance of the effect might change across methods.
+
+**Conclusion:**
+Of the three methods, **Stochastic Regression Imputation (on its own)** is generally better than mean imputation because it preserves the distribution and relationships. However, **Available Case Analysis (ACA)** might be more reliable here if the MAR assumption holds for the regression model. In a real scenario, **Multiple Imputation** would be the most trusted approach, as it correctly propagates the uncertainty of the missing values through Rubin's rules.

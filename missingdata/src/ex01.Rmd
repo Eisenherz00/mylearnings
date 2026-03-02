@@ -1,0 +1,289 @@
+---
+title: "Exercise 01 – Missing Data Analysis with ACS Data"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+knit: (function(input, ...) {
+    rmarkdown::render(
+      input,
+      output_dir = "../output"
+    )
+  })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+In this exercise, we use the file `acs.RData`. It contains two datasets: `acs`
+(fully observed) and `acs.mis` (with nonresponse). Both are derived from the
+`acs12` dataset included in the R package `openintro`. The data contain a small
+subset of variables and observations from the American Community Survey (ACS)
+2012.
+
+```{r load-data}
+load("../acs.RData")
+```
+
+---
+
+# Part (a): Identifying Nonresponse
+
+**Question:** Which variables are affected by nonresponse in `acs.mis`? What is
+the nonresponse rate for these variables?
+
+## Answer
+
+```{r part-a}
+# Count NAs per variable
+na_counts <- colSums(is.na(acs.mis))
+na_rates  <- colMeans(is.na(acs.mis))
+
+# Display results
+data.frame(
+  Variable       = names(na_counts),
+  Missing_Count  = na_counts,
+  Missing_Rate   = paste0(round(na_rates * 100, 1), "%"),
+  row.names      = NULL
+)
+```
+
+**Discussion:**
+
+Two variables are affected by nonresponse:
+
+- **`income`**: 549 missing values out of 1605 observations (34.2%).
+- **`married`**: 504 missing values out of 1605 observations (31.4%).
+
+All other variables (`employment`, `race`, `age`, `gender`, `edu`) are fully
+observed.
+
+---
+
+# Part (b): Average Income from Fully Observed Data
+
+**Question:** Compute the average income and its standard error (assuming
+simple random sampling with replacement) using the fully observed data `acs`.
+
+## Answer
+
+Under simple random sampling with replacement, the standard error of the sample
+mean is:
+
+$$
+\text{SE}(\bar{x}) = \frac{s}{\sqrt{n}}
+$$
+
+```{r part-b}
+mean_income_full <- mean(acs$income)
+se_income_full   <- sd(acs$income) / sqrt(nrow(acs))
+
+cat("Full data (acs):\n")
+cat("  Mean income :", round(mean_income_full, 2), "\n")
+cat("  SE          :", round(se_income_full, 2), "\n")
+cat("  n           :", nrow(acs), "\n")
+```
+
+---
+
+# Part (c): Average Income from `acs.mis` — CCA vs. ACA
+
+**Question:** Compute the average income and its standard error using
+`acs.mis`. Compute these statistics once using complete-case analysis (CCA) and
+once using available-case analysis (ACA). Discuss your findings. What do you
+conclude regarding the nonresponse mechanism?
+
+## Answer
+
+### Complete-Case Analysis (CCA)
+
+CCA discards all rows that have **any** missing value across all variables used
+in the analysis.
+
+```{r part-c-cca}
+acs_complete <- acs.mis[complete.cases(acs.mis), ]
+
+mean_income_cca <- mean(acs_complete$income)
+se_income_cca   <- sd(acs_complete$income) / sqrt(nrow(acs_complete))
+
+cat("Complete-Case Analysis (CCA):\n")
+cat("  Mean income :", round(mean_income_cca, 2), "\n")
+cat("  SE          :", round(se_income_cca, 2), "\n")
+cat("  n used      :", nrow(acs_complete), "\n")
+```
+
+### Available-Case Analysis (ACA)
+
+ACA uses all observations where the variable of interest (`income`) is
+observed, regardless of missingness on other variables.
+
+```{r part-c-aca}
+income_observed <- acs.mis$income[!is.na(acs.mis$income)]
+
+mean_income_aca <- mean(income_observed)
+se_income_aca   <- sd(income_observed) / sqrt(length(income_observed))
+
+cat("Available-Case Analysis (ACA):\n")
+cat("  Mean income :", round(mean_income_aca, 2), "\n")
+cat("  SE          :", round(se_income_aca, 2), "\n")
+cat("  n used      :", length(income_observed), "\n")
+```
+
+### Comparison
+
+```{r part-c-comparison}
+comparison <- data.frame(
+  Method    = c("Full data (acs)", "CCA", "ACA"),
+  Mean      = round(c(mean_income_full, mean_income_cca, mean_income_aca), 2),
+  SE        = round(c(se_income_full, se_income_cca, se_income_aca), 2),
+  n         = c(nrow(acs), nrow(acs_complete), length(income_observed))
+)
+comparison
+```
+
+**Discussion:**
+
+- **CCA** uses fewer observations because it drops rows with missingness on
+  *any* variable (both `income` and `married` contribute to exclusion). This
+  leads to a larger standard error due to reduced sample size.
+- **ACA** retains more observations (all rows where `income` is observed),
+  providing a smaller standard error than CCA.
+- If the mean from CCA and ACA differ substantially from the full-data mean,
+  this suggests that the nonresponse mechanism is **not MCAR** (Missing
+  Completely At Random). If the means are similar, it is consistent with MCAR
+  — though it does not prove it.
+
+---
+
+# Part (d): Linear Regression of log(income)
+
+**Question:** Run a linear regression of log(income) on all other variables
+except `married`. Run this regression on both datasets, `acs` and `acs.mis`.
+Discuss your findings. What does R do if you run the model on `acs.mis`? What
+do you conclude regarding the nonresponse mechanism?
+
+## Answer
+
+### Regression on full data (`acs`)
+
+```{r part-d-full}
+# We need to handle income == 0 for log transformation.
+# Common approach: use log(income + 1) or filter to income > 0.
+# Here we use log(income) on observations with income > 0.
+
+acs_pos <- acs[acs$income > 0, ]
+
+model_full <- lm(log(income) ~ employment + race + age + gender + edu,
+                 data = acs_pos)
+summary(model_full)
+```
+
+### Regression on `acs.mis`
+
+```{r part-d-mis}
+acs_mis_pos <- acs.mis[!is.na(acs.mis$income) & acs.mis$income > 0, ]
+
+model_mis <- lm(log(income) ~ employment + race + age + gender + edu,
+                data = acs_mis_pos)
+summary(model_mis)
+```
+
+### Comparing coefficients
+
+```{r part-d-compare}
+coef_comparison <- data.frame(
+  Full_Data  = round(coef(model_full), 4),
+  Missing_Data = round(coef(model_mis), 4),
+  Difference = round(coef(model_full) - coef(model_mis), 4)
+)
+coef_comparison
+```
+
+**Discussion:**
+
+- When running `lm()` on `acs.mis`, R **automatically performs complete-case
+  analysis**: it silently drops all rows with any `NA` in the variables used by
+  the model. Since `married` is excluded from the formula, the only source of
+  NAs is `income` itself. R reports the number of deleted observations.
+- If the regression coefficients from the two models are similar, this is
+  consistent with the nonresponse in `income` being (at most) **MAR** —
+  meaning that once we condition on the predictors in the model, the
+  probability of `income` being missing does not depend on income itself.
+- If the coefficients differ substantially, this could indicate that the
+  nonresponse mechanism is **MNAR** (the probability of missingness depends on
+  the unobserved income value).
+
+---
+
+# Part (e): Evaluating the Nonresponse Mechanism
+
+**Question:** Since we have the fully observed data available, we can evaluate
+the nonresponse mechanism by regressing the nonresponse indicator on the fully
+observed data.
+
+## Answer
+
+### (e.a) Generate the missingness indicator
+
+```{r part-e-indicator}
+# R_income = 1 if income is missing in acs.mis, 0 otherwise
+acs$R_income <- as.integer(is.na(acs.mis$income))
+
+cat("Missingness indicator distribution:\n")
+table(acs$R_income)
+cat("\nProportion missing:", mean(acs$R_income), "\n")
+```
+
+### (e.b) Logistic regression of the missingness indicator
+
+```{r part-e-logistic}
+model_miss <- glm(R_income ~ income + employment + race + age + gender + edu + married,
+                  data = acs, family = binomial)
+summary(model_miss)
+```
+
+### Interpreting the results
+
+```{r part-e-interpret}
+# Odds ratios with confidence intervals
+exp_coef <- exp(cbind(OR = coef(model_miss), confint(model_miss)))
+round(exp_coef, 4)
+```
+
+**Discussion:**
+
+- If **none** of the predictor variables (including `income` itself) are
+  significant, this supports the hypothesis that the data are **MCAR** —
+  missingness does not depend on any observed or unobserved quantity.
+- If predictor variables **other than `income`** are significant (e.g., `age`,
+  `employment`, `gender`) but `income` itself is not, this is consistent with
+  **MAR** — missingness depends on observed covariates but not on the missing
+  value itself.
+- If `income` **is significant**, this provides evidence for **MNAR** —
+  the probability of `income` being missing depends on the actual value of
+  income. Note: in practice we would never have access to the true `income`
+  for the missing cases, so this diagnostic is only possible here because we
+  have the complete `acs` dataset.
+
+> **Key caveat:** Even if `income` is significant in this logistic regression,
+> we are testing MNAR *given* the other covariates. The practical distinction
+> between MAR and MNAR always depends on which covariates are conditioned upon.
+
+---
+
+# Summary
+
+| Part | Key Concept                          |
+|------|--------------------------------------|
+| (a)  | Identifying variables with NAs and computing nonresponse rates |
+| (b)  | Baseline statistics from fully observed data |
+| (c)  | CCA vs. ACA: impact of missing data on point estimates and SEs |
+| (d)  | Regression under missingness; R's default behavior (`na.action`) |
+| (e)  | Diagnosing the missingness mechanism using logistic regression |

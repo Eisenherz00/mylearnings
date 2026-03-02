@@ -1,0 +1,172 @@
+---
+title: "Exercise Unit 5 – Reproducibility of Multiple Imputation"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+knit: (function(input, ...) {
+    rmarkdown::render(
+      input,
+      output_dir = "../output"
+    )
+  })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+This exercise illustrates the reproducibility argument in Multiple Imputation. We use the `PASS` data again, comparing results when generating $m=5$ vs. $m=50$ imputed datasets across 50 repeated calls to the `mice` command (using different random seeds).
+
+The file `PASS_repeated_imp.RData` contains:
+- `PASS.imp5`: A list of 50 `mids` objects, each with $m=5$ imputations.
+- `PASS.imp50`: A list of 50 `mids` objects, each with $m=50$ imputations.
+
+```{r load-data}
+load("../PASS_repeated_imp.RData")
+library(mice)
+```
+
+---
+
+# Part (a): Repeated Analysis with $m=5$
+
+**Question:** For each of the 50 `mice` outputs in `PASS.imp5`, run the linear regression:
+`log(depind) ~ log(hhincome) + hhtype + livspace + benefits`.
+Extract the coefficient for the "couple with children under 16" dummy, its variance (SE squared), and its p-value.
+
+## Answer
+
+```{r part-a}
+# Define the target coefficient name
+target_coef <- "hhtypecouple with children <16"
+
+# Function to analyze a single mids object
+analyze_mids <- function(imp_obj) {
+  fit <- with(imp_obj, lm(log(depind) ~ log(hhincome) + hhtype + livspace + benefits))
+  pooled <- pool(fit)
+  res <- summary(pooled)
+  
+  # Extract row for target coefficient
+  target_row <- res[res$term == target_coef, ]
+  
+  return(c(
+    estimate = target_row$estimate,
+    variance = target_row$std.error^2,
+    p_value  = target_row$p.value
+  ))
+}
+
+# Run analysis for all 50 iterations of m=5
+results_m5 <- t(sapply(PASS.imp5, analyze_mids))
+results_m5 <- as.data.frame(results_m5)
+
+head(results_m5)
+```
+
+---
+
+# Part (b): Repeated Analysis with $m=50$
+
+**Question:** Compute the same results using `PASS.imp50`.
+
+## Answer
+
+```{r part-b}
+# Run analysis for all 50 iterations of m=50
+results_m50 <- t(sapply(PASS.imp50, analyze_mids))
+results_m50 <- as.data.frame(results_m50)
+
+head(results_m50)
+```
+
+---
+
+# Part (c): Distribution of Regression Coefficients
+
+**Question:** Compare the distribution of the estimated regression coefficients between `PASS.imp5` and `PASS.imp50`.
+
+## Answer
+
+```{r part-c}
+summary_est <- data.frame(
+  m5 = results_m5$estimate,
+  m50 = results_m50$estimate
+)
+summary(summary_est)
+
+# Graphical representation
+boxplot(summary_est, main = "Distribution of Estimates (m=5 vs m=50)", 
+        ylab = "Coefficient Estimate", col = c("lightblue", "lightgreen"))
+```
+
+**Discussion:**
+The average estimate across all 50 iterations should be very similar for both $m=5$ and $m=50$. However, the coefficients for $m=50$ should show much less variation across the 50 iterations compared to $m=5$. This is because $m=50$ reduces the simulation error (Monte Carlo error) inherent in the imputation process.
+
+---
+
+# Part (d): Distribution of Estimated Variances
+
+**Question:** Compare the distribution of the estimated MI variances between `PASS.imp5` and `PASS.imp50`.
+
+## Answer
+
+```{r part-d}
+summary_var <- data.frame(
+  m5 = results_m5$variance,
+  m50 = results_m50$variance
+)
+summary(summary_var)
+
+boxplot(summary_var, main = "Distribution of MI Variances (m=5 vs m=50)", 
+        ylab = "Estimated Variance", col = c("lightblue", "lightgreen"))
+```
+
+**Discussion:**
+Similar to the estimates, the MI variances estimated with $m=50$ should be much more stable (lower spread) across the 50 runs than those estimated with $m=5$.
+
+---
+
+# Part (e): Variance of the Estimates
+
+**Question:** Compute the variance of the estimated regression coefficients across the 50 iterations for both datasets.
+
+## Answer
+
+```{r part-e}
+var_of_estimates <- sapply(summary_est, var)
+print(var_of_estimates)
+```
+
+**Discussion:**
+The variance of the estimates across iterations is a direct measure of reproducibility. The variance for $m=5$ is expected to be significantly larger than for $m=50$, demonstrating why a higher $m$ is preferred for stable, reproducible results.
+
+---
+
+# Part (f): Distribution of P-values
+
+**Question:** Compare the distribution of the estimated p-values.
+
+## Answer
+
+```{r part-f}
+summary_p <- data.frame(
+  m5 = results_m5$p_value,
+  m50 = results_m50$p_value
+)
+summary(summary_p)
+
+# Plotting the p-values
+stripchart(summary_p, method = "jitter", vertical = TRUE, pch = 16, 
+           col = c("blue", "red"), main = "P-value Distribution")
+abline(h = 0.05, lty = 2, col = "darkgrey")
+```
+
+**Discussion:**
+With $m=5$, you might find that some iterations yield p-values below 0.05 while others yield p-values above 0.05, purely due to the random noise of the imputation process. With $m=50$, the p-values are much more consistent, providing a more reliable basis for scientific conclusions.

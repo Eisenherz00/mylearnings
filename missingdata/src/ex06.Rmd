@@ -1,0 +1,215 @@
+---
+title: "Exercise Unit 6 – Comparing Imputation Methods"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+knit: (function(input, ...) {
+    rmarkdown::render(
+      input,
+      output_dir = "../output"
+    )
+  })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+The file `cps_educ_missing.RData` contains data from the Current Population Survey. The object `cps` contains the fully observed data, while `cps.mis` contains the same data with some observations set to missing. This exercise compares parametric (ordered and unordered logistic regression) and nonparametric imputation methods.
+
+```{r load-data}
+load("../cps_educ_missing.RData")
+library(mice)
+```
+
+---
+
+# Part (a): Univariate Distributions and Missingness Mechanism
+
+**Question:** Compare the univariate distributions of the variables affected by nonresponse before and after missingness has been induced. What do you conclude regarding the missingness mechanism?
+
+## Answer
+
+```{r part-a}
+# Identifying variables with missing values
+vars_with_na <- names(which(colSums(is.na(cps.mis)) > 0))
+print(vars_with_na)
+
+# Compare tax distribution
+summary(cps$tax)
+summary(cps.mis$tax)
+
+# Compare educ distribution
+prop.table(table(cps$educ))
+prop.table(table(cps.mis$educ))
+```
+
+**Discussion:**
+The missingness in `tax` is extremely high (nearly 99%). For `educ`, about 45% is missing. If the distributions of the observed values in `cps.mis` differ significantly from the original values in `cps`, it suggests that the missingness mechanism is not MCAR (Missing Completely At Random). 
+
+---
+
+# Part (b): Data Preparation
+
+**Question:** Prepare the data for imputation by changing variables to factor variables where appropriate.
+
+## Answer
+
+```{r part-b}
+# Converting categorical variables (marital, race, sex) to factors
+# Note: educ is already a factor
+prep_data <- function(df) {
+  df$marital <- as.factor(df$marital)
+  df$race    <- as.factor(df$race)
+  df$sex     <- as.factor(df$sex)
+  return(df)
+}
+
+cps.mis <- prep_data(cps.mis)
+cps     <- prep_data(cps)
+
+str(cps.mis)
+```
+
+---
+
+# Part (c): Parametric Imputation (imp1)
+
+**Question:** Impute the missing values in `cps.mis` using parametric methods. Run 10 iterations of the Gibbs sampler between each imputation and generate 10 imputed datasets. (Predictive Mean Matching is NOT a parametric method here).
+
+## Answer
+
+For parametric imputation of a 4-level categorical variable like `educ`, we can use multinomial logistic regression (`polyreg`) or ordered logistic regression (`polr`). For `tax` (continuous), we use linear regression (`norm`).
+
+```{r part-c}
+# Define methods
+methods_c <- make.method(cps.mis)
+methods_c["tax"]  <- "norm"
+methods_c["educ"] <- "polyreg" # Unordered multinomial logistic regression
+
+# Set maxit and m
+imp1 <- mice(cps.mis, method = methods_c, m = 10, maxit = 10, printFlag = FALSE, seed = 123)
+```
+
+---
+
+# Part (d): Ordered vs Unordered Logistic Regression (imp2)
+
+**Question:** Generate another imputed dataset using ordered logistic regression for the `educ` variable. Keep other specifications from (c).
+
+## Answer
+
+```{r part-d}
+# Define methods
+methods_d <- make.method(cps.mis)
+methods_d["tax"]  <- "norm"
+methods_d["educ"] <- "polr" # Ordered logistic regression
+
+# Set maxit and m
+imp2 <- mice(cps.mis, method = methods_d, m = 10, maxit = 10, printFlag = FALSE, seed = 123)
+```
+
+---
+
+# Part (e): Nonparametric Imputation (imp3)
+
+**Question:** Impute the missing values using nonparametric methods (e.g., Predictive Mean Matching or Random Forest).
+
+## Answer
+
+```{r part-e}
+# Using Random Forest as a nonparametric method
+imp3 <- mice(cps.mis, method = "rf", m = 10, maxit = 10, printFlag = FALSE, seed = 123)
+```
+
+---
+
+# Part (f): Checking Convergence
+
+**Question:** Check the convergence of all three imputation routines.
+
+## Answer
+
+```{r part-f, fig.height=8}
+# Convergence plots for each imputation method
+plot(imp1)
+mtext("imp1 (Parametric: polyreg + norm)", side = 3, line = -1.5, outer = TRUE)
+
+plot(imp2)
+mtext("imp2 (Ordered: polr + norm)", side = 3, line = -1.5, outer = TRUE)
+
+plot(imp3)
+mtext("imp3 (Non-parametric: rf)", side = 3, line = -1.5, outer = TRUE)
+```
+
+---
+
+# Part (g): Marginal Distribution of Tax
+
+**Question:** Compare the marginal distribution of the tax variable in the original data with the imputed data. Which problems do you notice?
+
+## Answer
+
+```{r part-g}
+# Original
+summary(cps$tax)
+
+# Imputed counts
+cat("Summary for imp1 (Normal):\n")
+summary(complete(imp1)$tax)
+
+cat("Summary for imp3 (RF):\n")
+summary(complete(imp3)$tax)
+```
+
+**Discussion:**
+Using `norm` (linear regression) for `tax` might result in negative values, which are physically impossible for taxes in this context. Nonparametric methods like `rf` or `pmm` generally respect the boundaries of the observed data better.
+
+---
+
+# Part (h): Education Relative Frequencies
+
+**Question:** Compute relative frequencies of education categories for original data and all imputed datasets.
+
+## Answer
+
+```{r part-h}
+# Function to get pooled frequencies (manual average)
+get_freqs <- function(imp_obj) {
+  # We extract all 10 datasets and average the tables
+  all_tables <- lapply(1:10, function(i) prop.table(table(complete(imp_obj, i)$educ)))
+  # Average the tables
+  colMeans(do.call(rbind, all_tables))
+}
+
+orig_freqs <- prop.table(table(cps$educ))
+freqs1 <- get_freqs(imp1)
+freqs2 <- get_freqs(imp2)
+freqs3 <- get_freqs(imp3)
+
+results_h <- rbind(
+  Original = orig_freqs,
+  imp1_Polyreg = freqs1,
+  imp2_Polr = freqs2,
+  imp3_RF = freqs3
+)
+round(results_h, 4)
+```
+
+---
+
+# Part (i): Discussion – Ordered vs Unordered
+
+**Question:** Why might the multinomial model (unordered) result in frequencies closer to the original data than the ordered model, even though the variable is ordered?
+
+## Answer
+
+**Discussion:**
+The ordered logistic regression (`polr`) assumes **proportional odds** (Parallel Regression Assumption). If this assumption is violated in the data—meaning the relationship between predictors and the transition between different levels of education is not constant—the ordered model will be mis-specified. The multinomial model (`polyreg`) is more flexible because it does not assume an ordered relationship, allowing it to capture more complex patterns in the data, albeit at the cost of estimating more parameters. Thus, the flexible multinomial model often provides better marginal fits when the proportional odds assumption fails.
