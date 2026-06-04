@@ -1,5 +1,6 @@
 # ── Data files ──────────────────────────────────────────────────────────────
 *.csv
+*.RData
 *.tsv
 *.xlsx
 *.xls
@@ -44,3 +45,18 @@ env/
 .RData
 .Ruser
 .Rproj.user/
+
+# ── LaTeX ────────────────────────────────────────────────────────────────────
+*.aux
+*.log
+*.pdf
+*.toc
+*.out
+*.nav
+*.snm
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+output/
